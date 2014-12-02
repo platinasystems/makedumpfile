@@ -1,95 +1,16 @@
-makedumpfile (1.5.7-3) unstable; urgency=medium
+makedumpfile (1:1.5.3-2) unstable; urgency=medium
 
-  [Mauricio Faria de Oliveira <mauricfo@linux.vnet.ibm.com>]
-  * Add possibility to find vmlinux for ppc64el arch
-    Closes: #763688
+  * Adapt to kernel 3.16 changes in symbols :
+    - Work around removal of struct vmlist in kernel 3.16
+    - Fix dump_dmesg accordingly
+    - Backported commits are : 759b78c, cee64e3, 8145e41, e203095,
+      150b58eb, 846ab2e, 1202589, 8a0236c, 9d38132, e24dc53
+    Closes: #719943
+  * Implement systemd service and correct mechanism
+    to capture kernel dumps under systemd control
+    Closes: #771210
 
- -- Louis Bouchard <louis.bouchard@ubuntu.com>  Fri, 14 Nov 2014 15:56:15 +0100
-
-makedumpfile (1.5.7-2) unstable; urgency=medium
-
-  [Lee Schermerhorn]
-  * Add '-F' [flatten] to makedumpefile args for remote kdump vi ssh.
-    Closes: #768317
-
- -- Louis Bouchard <louis.bouchard@ubuntu.com>  Mon, 10 Nov 2014 16:51:04 +0100
-
-makedumpfile (1.5.7-1) unstable; urgency=medium
-
-  * New upstream version includes :
-    - Show the memory usage of 1st kernel : Add the new option 
-      "--mem-usage" to show the memory usage at a given moment 
-      in 1st kernel. This will be helpful to estimate the 
-      appropriate storage size to store a filtered dumpfile,
-      thanks Baoquan.
-
-    -  hugepage filtering : Both THPs and hugetlbfs pages are now 
-       excluded as user pages.  As for hugetlbfs, this feature 
-       will be enabled for linux-3.16 or later.
-
-    -  Support new kernels
-       The supported kernel is updated to 3.16 in this version.
-
-  * Debian specific enhancements :
-    - Networked kernel dumps
-      The kdump-tools script is now able to send the output of
-      makedumpfile to a remote server using either SSH or NFS
-      protocols.
-    - Add myself as the new maintainer
-
- -- Louis Bouchard <louis.bouchard@ubuntu.com>  Thu, 18 Sep 2014 13:21:55 +0200
-
-makedumpfile (1.5.6-2) unstable; urgency=medium
-
-  * [ Juerg Haefliger <juerg.haefliger@hp.com> ]
-    Make the dumping of dmesg configurable
-
-    Dumping the dmesg buffer has shown to be problematic when kernels
-    change. This patch introduces a new config variable that can turn
-    the dmesg dump off.  The default behaviour unchanged, i.e., the
-    dmesg buffer is dumped.
-    Closes: 747173
-
- -- Louis Bouchard <louis.bouchard@ubuntu.com>  Fri, 23 May 2014 12:33:24 +0200
-
-makedumpfile (1.5.6-1) unstable; urgency=medium
-
-  [ Louis Bouchard ]
-  * New upstream version
-
-  * Add x32 armel armhf and ppa64el to Achitecture to close the delta with
-    Ubuntu
-
- -- Louis Bouchard <louis.bouchard@ubuntu.com>  Tue, 29 Apr 2014 16:07:03 +0200
-
-makedumpfile (1.5.5-2) unstable; urgency=low
-
-  * Drop debug kernel requirement from kdump-config
-
-    [Konstantin Khlebnikov]
-    Starting from 2.6.24 kernel provides vmcoreinfo right in vmcore,
-    so makedumpfile can produce filtered dumps without vmlinux or slecial vmcoreinfo.
-    Closes: #638849
-
-  * debian/kdump-config : Define Timestamp only once in variable and reuse
-
- -- Louis Bouchard <louis.bouchard@ubuntu.com>  Wed, 15 Jan 2014 10:29:34 +0100
-
-makedumpfile (1.5.5-1) unstable; urgency=low
-
-  [ Louis Bouchard ]
-  * New upstream version
-    - Reworked debian/patches to use DEP3
-    - Use install statement from upstream Makefile
-
- -- Louis Bouchard <louis.bouchard@ubuntu.com>  Thu, 19 Dec 2013 11:31:10 +0100
-
-makedumpfile (1.5.4-1) unstable; urgency=low
-
-  [Louis Bouchard]
-  * New upstream version
-
- -- Louis Bouchard <louis.bouchard@ubuntu.com>  Tue, 16 Jul 2013 16:05:09 +0200
+ -- Louis Bouchard <louis.bouchard@ubuntu.com>  Mon, 02 Dec 2014 15:17:43 +0100
 
 makedumpfile (1.5.3-1) unstable; urgency=low
 

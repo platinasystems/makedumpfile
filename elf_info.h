@@ -19,9 +19,6 @@
 #include <elf.h>
 #include <sys/types.h>
 
-#define KEXEC_CORE_NOTE_NAME "CORE"
-#define KEXEC_CORE_NOTE_NAME_BYTES sizeof(KEXEC_CORE_NOTE_NAME)
-
 #define ERASEINFO_NOTE_NAME		"ERASEINFO"
 #define ERASEINFO_NOTE_NAME_BYTES	(sizeof(ERASEINFO_NOTE_NAME))
 
@@ -30,23 +27,14 @@
 
 off_t paddr_to_offset(unsigned long long paddr);
 off_t paddr_to_offset2(unsigned long long paddr, off_t hint);
-unsigned long long page_head_to_phys_start(unsigned long long head_paddr);
-unsigned long long page_head_to_phys_end(unsigned long long head_paddr);
-off_t offset_to_pt_load_start(off_t offset);
-off_t offset_to_pt_load_end(off_t offset);
 unsigned long long vaddr_to_paddr_general(unsigned long long vaddr);
 off_t vaddr_to_offset_slow(int fd, char *filename, unsigned long long vaddr);
 unsigned long long get_max_paddr(void);
-
-int page_is_fractional(off_t page_offset);
 
 int get_elf64_ehdr(int fd, char *filename, Elf64_Ehdr *ehdr);
 int get_elf32_ehdr(int fd, char *filename, Elf32_Ehdr *ehdr);
 int get_elf_info(int fd, char *filename);
 void free_elf_info(void);
-int get_elf_loads(int fd, char *filename);
-int set_kcore_vmcoreinfo(uint64_t vmcoreinfo_addr, uint64_t vmcoreinfo_len);
-int get_kcore_dump_loads(void);
 
 int is_elf64_memory(void);
 int is_xen_memory(void);
@@ -79,8 +67,6 @@ void get_xen_crash_info(off_t *offset, unsigned long *size);
 int has_eraseinfo(void);
 void get_eraseinfo(off_t *offset, unsigned long *size);
 void set_eraseinfo(off_t offset, unsigned long size);
-
-off_t get_max_file_offset(void);
 
 #endif  /* ELF_INFO_H */
 

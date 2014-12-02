@@ -18,7 +18,6 @@
 
 #include "makedumpfile.h"
 #include "cache.h"
-#include "print_info.h"
 
 struct cache_entry {
 	unsigned long long paddr;
@@ -36,25 +35,6 @@ static struct cache_entry pool[CACHE_SIZE];
 static int avail = CACHE_SIZE;
 
 static struct cache used, pending;
-
-int
-cache_init(void)
-{
-	void *bufptr;
-	int i;
-
-	for (i = 0; i < CACHE_SIZE; ++i) {
-		bufptr = malloc(info->page_size);
-		if (bufptr == NULL) {
-			ERRMSG("Can't allocate memory for cache. %s\n",
-			       strerror(errno));
-			return FALSE;
-		}
-		pool[i].bufptr = bufptr;
-	}
-
-	return TRUE;
-}
 
 static void
 add_entry(struct cache *cache, struct cache_entry *entry)
@@ -104,19 +84,23 @@ cache_alloc(unsigned long long paddr)
 	struct cache_entry *entry = NULL;
 
 	if (avail) {
-		entry = &pool[--avail];
-		entry->paddr = paddr;
-		add_entry(&pending, entry);
-	} else if (pending.tail) {
-		entry = pending.tail;
-		entry->paddr = paddr;
-	} else if (used.tail) {
-		entry = used.tail;
-		remove_entry(&used, entry);
-		entry->paddr = paddr;
-		add_entry(&pending, entry);
-	} else
-		return NULL;
+		void *bufptr = malloc(info->page_size);
+		if (bufptr) {
+			entry = &pool[--avail];
+			entry->bufptr = bufptr;
+		}
+	}
+
+	if (!entry) {
+		if (used.tail) {
+			entry = used.tail;
+			remove_entry(&used, entry);
+		} else
+			return NULL;
+	}
+
+	entry->paddr = paddr;
+	add_entry(&pending, entry);
 
 	return entry->bufptr;
 }
