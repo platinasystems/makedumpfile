@@ -23,6 +23,10 @@
 #include "print_info.h"
 #include "sadump_mod.h"
 
+#include <arpa/inet.h> /* htonl, htons */
+
+#define SADUMP_EFI_GUID_TEXT_REPR_LEN 36
+
 #ifdef __x86__
 
 #define KEXEC_NOTE_HEAD_BYTES roundup(sizeof(Elf32_Nhdr), 4)
@@ -37,12 +41,10 @@
 
 #endif
 
-#define KEXEC_CORE_NOTE_NAME "CORE"
-#define KEXEC_CORE_NOTE_NAME_BYTES roundup(sizeof(KEXEC_CORE_NOTE_NAME), 4)
 #define KEXEC_CORE_NOTE_DESC_BYTES roundup(sizeof(struct elf_prstatus), 4)
 
 #define KEXEC_NOTE_BYTES ((KEXEC_NOTE_HEAD_BYTES * 2) +                \
-			  KEXEC_CORE_NOTE_NAME_BYTES +		       \
+			  roundup(KEXEC_CORE_NOTE_NAME_BYTES, 4) +     \
 			  KEXEC_CORE_NOTE_DESC_BYTES )
 
 #define for_each_online_cpu(cpu)					\
@@ -92,7 +94,7 @@ static int read_device_diskset(struct sadump_diskset_info *sdi, void *buf,
 			       size_t bytes, ulong *offset);
 static int read_sadump_header(char *filename);
 static int read_sadump_header_diskset(int diskid, struct sadump_diskset_info *sdi);
-static unsigned long long pfn_to_block(unsigned long long pfn);
+static unsigned long long pfn_to_block(mdf_pfn_t pfn);
 static int lookup_diskset(unsigned long long whole_offset, int *diskid,
 			  unsigned long long *disk_offset);
 static int max_mask_cpu(void);
@@ -200,7 +202,8 @@ sadump_copy_1st_bitmap_from_memory(void)
 	 * modify bitmap accordingly.
 	 */
 	if (si->kdump_backed_up) {
-		unsigned long long paddr, pfn, backup_src_pfn;
+		unsigned long long paddr;
+		mdf_pfn_t pfn, backup_src_pfn;
 
 		for (paddr = si->backup_src_start;
 		     paddr < si->backup_src_start + si->backup_src_size;
@@ -212,9 +215,9 @@ sadump_copy_1st_bitmap_from_memory(void)
 						      si->backup_src_start);
 
 			if (is_dumpable(info->bitmap_memory, backup_src_pfn))
-				set_bit_on_1st_bitmap(pfn);
+				set_bit_on_1st_bitmap(pfn, NULL);
 			else
-				clear_bit_on_1st_bitmap(pfn);
+				clear_bit_on_1st_bitmap(pfn, NULL);
 		}
 	}
 
@@ -334,7 +337,7 @@ guid_to_str(efi_guid_t *guid, char *buf, size_t buflen)
 {
 	snprintf(buf, buflen,
 		 "%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",
-		 guid->data1, guid->data2, guid->data3,
+		 htonl(guid->data1), htons(guid->data2), htons(guid->data3),
 		 guid->data4[0], guid->data4[1], guid->data4[2],
 		 guid->data4[3], guid->data4[4], guid->data4[5],
 		 guid->data4[6], guid->data4[7]);
@@ -429,7 +432,7 @@ read_sadump_header(char *filename)
 	unsigned long bitmap_len, dumpable_bitmap_len;
 	enum sadump_format_type flag_sadump;
 	uint32_t smram_cpu_state_size = 0;
-	char guid[33];
+	char guid[SADUMP_EFI_GUID_TEXT_REPR_LEN+1];
 
 	if ((si->sph_memory = malloc(SADUMP_DEFAULT_BLOCK_SIZE)) == NULL) {
 		ERRMSG("Can't allocate memory for partition header buffer: "
@@ -666,7 +669,7 @@ read_sadump_header_diskset(int diskid, struct sadump_diskset_info *sdi)
 {
 	struct sadump_part_header *sph = NULL;
 	unsigned long offset = 0;
-	char guid[33];
+	char guid[SADUMP_EFI_GUID_TEXT_REPR_LEN+1];
 
 	if ((sph = malloc(si->sh_memory->block_size)) == NULL) {
 		ERRMSG("Can't allocate memory for partition header buffer. "
@@ -752,7 +755,8 @@ sadump_initialize_bitmap_memory(void)
 	struct sadump_header *sh = si->sh_memory;
 	struct dump_bitmap *bmp;
 	unsigned long dumpable_bitmap_offset;
-	unsigned long long section, max_section, pfn;
+	unsigned long long section, max_section;
+	mdf_pfn_t pfn;
 	unsigned long long *block_table;
 
 	dumpable_bitmap_offset =
@@ -899,7 +903,7 @@ sadump_set_timestamp(struct timeval *ts)
 	return TRUE;
 }
 
-unsigned long long
+mdf_pfn_t
 sadump_get_max_mapnr(void)
 {
 	return si->sh_memory->max_mapnr;
@@ -949,8 +953,8 @@ failed:
 int
 readpage_sadump(unsigned long long paddr, void *bufptr)
 {
-	unsigned long long pfn, block, whole_offset, perdisk_offset;
-	ulong page_offset;
+	mdf_pfn_t pfn;
+	unsigned long long block, whole_offset, perdisk_offset;
 	int fd_memory;
 
 	if (si->kdump_backed_up &&
@@ -959,7 +963,6 @@ readpage_sadump(unsigned long long paddr, void *bufptr)
 		paddr += si->backup_offset - si->backup_src_start;
 
 	pfn = paddr_to_pfn(paddr);
-	page_offset = paddr % info->page_size;
 
 	if (pfn >= si->sh_memory->max_mapnr)
 		return FALSE;
@@ -1117,7 +1120,7 @@ sadump_check_debug_info(void)
 }
 
 static unsigned long long
-pfn_to_block(unsigned long long pfn)
+pfn_to_block(mdf_pfn_t pfn)
 {
 	unsigned long long block, section, p;
 

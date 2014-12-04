@@ -24,6 +24,8 @@
 #include "makedumpfile.h"
 #include "extension_eppic.h"
 
+static int apigetctype(int, char *, type_t *);
+
 /*
  * Most of the functions included in this file performs similar
  * functionality as in the applications/crash/eppic.c file part of
@@ -121,7 +123,7 @@ drilldown(ull offset, type_t *t)
 	int type_flag, len = 0, t_len = 0, nidx = 0;
 	int fctflg = 0, ref = 0, *idxlst = 0;
 	ull die_off = offset, t_die_off;
-	char *tstr = NULL;
+	char *tstr = NULL, *tstr_dup = NULL;
 
 	while (GET_DIE_ATTR_TYPE(die_off, &type_flag, &t_die_off)) {
 		switch (type_flag) {
@@ -183,7 +185,15 @@ drilldown(ull offset, type_t *t)
 			goto label;
 		case DW_TAG_structure_type:
 			eppic_type_mkstruct(t);
-			goto label;
+label:
+			eppic_type_setsize(t, GET_DIE_LENGTH(t_die_off, TRUE));
+			eppic_type_setidx(t, (ull)t_die_off);
+			tstr = GET_DIE_NAME(t_die_off);
+			/* Drill down further */
+			if (tstr)
+				apigetctype(V_STRUCT, tstr, t);
+			die_off = 0;
+			break;
 		/* Unknown TAG ? */
 		default:
 			die_off = t_die_off;
@@ -191,19 +201,15 @@ drilldown(ull offset, type_t *t)
 		}
 	}
 
-label:
-	eppic_type_setsize(t, GET_DIE_LENGTH(t_die_off, TRUE));
-	eppic_type_setidx(t, (ull)t_die_off);
-	tstr = GET_DIE_NAME(t_die_off);
-
 out:
 	eppic_setupidx(t, ref, nidx, idxlst);
 	if (fctflg)
 		eppic_type_setfct(t, 1);
 	eppic_pushref(t, ref + (nidx ? 1 : 0));
-	if (tstr)
-		return eppic_strdup(tstr);
-	return eppic_strdup("");
+	tstr_dup = (tstr) ? eppic_strdup(tstr) : eppic_strdup("");
+	/* Free the memory allocated by makedumpfile. */
+	free(tstr);
+	return tstr_dup;
 }
 
 /*
@@ -216,9 +222,9 @@ apimember(char *mname, ull idx, type_t *tm, member_t *m, ull *last_index)
 	int nbits = 0, fbits = 0;
 	long offset;
 	ull m_die, die_off = idx;
-	char *name;
+	char *name = NULL;
 
-	nfields = GET_DIE_NFIELDS(die_off);
+	nfields = GET_DIE_NFIELDS_ALL(die_off);
 	/*
 	 * GET_DIE_NFIELDS() returns < 0 if the die is not structure type
 	 * or union type
@@ -235,16 +241,21 @@ apimember(char *mname, ull idx, type_t *tm, member_t *m, ull *last_index)
 		index = 0;
 
 	while (index < nfields) {
-		size = GET_DIE_MEMBER(die_off, index, &offset, &name, &nbits,
-				&fbits, &m_die);
+		size = GET_DIE_MEMBER_ALL(die_off, index, &offset, &name,
+					&nbits, &fbits, &m_die);
 
 		if (size < 0)
 			return NULL;
 
 		if (!mname || !mname[0] || !strcmp(mname, name)) {
 			eppic_member_ssize(m, size);
-			if (name)
+			if (name) {
 				eppic_member_sname(m, name);
+				/*
+				 * Free the memory allocated by makedumpfile.
+				 */
+				free(name);
+			}
 			else
 				eppic_member_sname(m, "");
 			eppic_member_soffset(m, offset);
@@ -266,13 +277,14 @@ apigetctype(int ctype, char *name, type_t *tout)
 
 	switch (ctype) {
 	case V_TYPEDEF:
-		size = GET_DOMAIN(name, DWARF_INFO_GET_DOMAIN_TYPEDEF, &die);
+		size = GET_DOMAIN_ALL(name, DWARF_INFO_GET_DOMAIN_TYPEDEF,
+									&die);
 		break;
 	case V_STRUCT:
-		size = GET_DOMAIN(name, DWARF_INFO_GET_DOMAIN_STRUCT, &die);
+		size = GET_DOMAIN_ALL(name, DWARF_INFO_GET_DOMAIN_STRUCT, &die);
 		break;
 	case V_UNION:
-		size = GET_DOMAIN(name, DWARF_INFO_GET_DOMAIN_UNION, &die);
+		size = GET_DOMAIN_ALL(name, DWARF_INFO_GET_DOMAIN_UNION, &die);
 		break;
 	/* TODO
 	 * Implement for all the domains
@@ -307,7 +319,8 @@ apigetval(char *name, ull *val, VALUE_S *value)
 {
 	ull ptr = 0;
 
-	ptr = GET_SYMBOL_ADDR(name);
+	ptr = GET_SYMBOL_ADDR_ALL(name);
+
 	if (!ptr)
 		return 0;
 
@@ -333,8 +346,11 @@ apigetval(char *name, ull *val, VALUE_S *value)
 
 	if (!eppic_typeislocal(stype) && eppic_type_getidx(stype) > 100) {
 		char *tname = GET_DIE_NAME(eppic_type_getidx(stype));
-		if (tname)
+		if (tname) {
 			eppic_chktype(stype, tname);
+			/* Free the memory allocated by makedumpfile. */
+			free(tname);
+		}
 	}
 	return 1;
 }

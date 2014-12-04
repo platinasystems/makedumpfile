@@ -26,6 +26,16 @@ void
 show_version(void)
 {
 	MSG("makedumpfile: version " VERSION " (released on " RELEASE_DATE ")\n");
+#ifdef USELZO
+	MSG("lzo\tenabled\n");
+#else
+	MSG("lzo\tdisabled\n");
+#endif
+#ifdef USESNAPPY
+	MSG("snappy\tenabled\n");
+#else
+	MSG("snappy\tdisabled\n");
+#endif
 	MSG("\n");
 }
 
@@ -48,16 +58,16 @@ print_usage(void)
 	MSG("\n");
 	MSG("Usage:\n");
 	MSG("  Creating DUMPFILE:\n");
-	MSG("  # makedumpfile    [-c|-l|-E] [-d DL] [-x VMLINUX|-i VMCOREINFO] VMCORE\n");
+	MSG("  # makedumpfile    [-c|-l|-p|-E] [-d DL] [-x VMLINUX|-i VMCOREINFO] VMCORE\n");
 	MSG("    DUMPFILE\n");
 	MSG("\n");
 	MSG("  Creating DUMPFILE with filtered kernel data specified through filter config\n");
 	MSG("  file or eppic macro:\n");
-	MSG("  # makedumpfile    [-c|-l|-E] [-d DL] -x VMLINUX [--config FILTERCONFIGFILE]\n");
+	MSG("  # makedumpfile    [-c|-l|-p|-E] [-d DL] -x VMLINUX [--config FILTERCONFIGFILE]\n");
 	MSG("    [--eppic EPPICMACRO] VMCORE DUMPFILE\n");
 	MSG("\n");
 	MSG("  Outputting the dump data in the flattened format to the standard output:\n");
-	MSG("  # makedumpfile -F [-c|-l|-E] [-d DL] [-x VMLINUX|-i VMCOREINFO] VMCORE\n");
+	MSG("  # makedumpfile -F [-c|-l|-p|-E] [-d DL] [-x VMLINUX|-i VMCOREINFO] VMCORE\n");
 	MSG("\n");
 	MSG("  Rearranging the dump data in the flattened format to a readable DUMPFILE:\n");
 	MSG("  # makedumpfile -R DUMPFILE\n");
@@ -79,12 +89,15 @@ print_usage(void)
 	MSG("  Creating DUMPFILE of Xen:\n");
 	MSG("  # makedumpfile -E [--xen-syms XEN-SYMS|--xen-vmcoreinfo VMCOREINFO] VMCORE DUMPFILE\n");
 	MSG("\n");
+	MSG("  Filtering domain-0 of Xen:\n");
+	MSG("  # makedumpfile -E -d DL -x vmlinux VMCORE DUMPFILE\n");
+	MSG("\n");
 	MSG("  Generating VMCOREINFO of Xen:\n");
 	MSG("  # makedumpfile -g VMCOREINFO --xen-syms XEN-SYMS\n");
 	MSG("\n");
 	MSG("\n");
 	MSG("  Creating DUMPFILE from multiple VMCOREs generated on sadump diskset configuration:\n");
-	MSG("  # makedumpfile [-c|-l] [-d DL] -x VMLINUX --diskset=VMCORE1 --diskset=VMCORE2\n");
+	MSG("  # makedumpfile [-c|-l|-p] [-d DL] -x VMLINUX --diskset=VMCORE1 --diskset=VMCORE2\n");
 	MSG("    [--diskset=VMCORE3 ..] DUMPFILE\n");
 	MSG("\n");
 	MSG("\n");
@@ -101,7 +114,7 @@ print_usage(void)
 	MSG("      marked in the following table is excluded. A user can specify multiple\n");
 	MSG("      page types by setting the sum of each page type for Dump_Level (DL).\n");
 	MSG("      The maximum of Dump_Level is 31.\n");
-	MSG("      Note that Dump_Level for Xen dump filtering is 0 or 1.\n");
+	MSG("      Note that Dump_Level for Xen dump filtering is 0 or 1 except on x86_64\n");
 	MSG("\n");
 	MSG("            |         cache    cache\n");
 	MSG("      Dump  |  zero   without  with     user    free\n");
@@ -117,7 +130,7 @@ print_usage(void)
 	MSG("\n");
 	MSG("  [-E]:\n");
 	MSG("      Create DUMPFILE in the ELF format.\n");
-	MSG("      This option cannot be specified with either of -c option or -l option,\n");
+	MSG("      This option cannot be specified with the -c, -l or -p options,\n");
 	MSG("      because the ELF format does not support compressed data.\n");
 	MSG("\n");
 	MSG("  [-x VMLINUX]:\n");
@@ -175,9 +188,12 @@ print_usage(void)
 	MSG("      Reassemble multiple DUMPFILEs, which are created by --split option,\n");
 	MSG("      into one DUMPFILE. dumpfile1 and dumpfile2 are reassembled into dumpfile.\n");
 	MSG("\n");
+	MSG("  [-b <order>]\n");
+	MSG("      Specify the cache 2^order pages in ram when generating DUMPFILE before\n");
+	MSG("      writing to output. The default value is 4.\n");
+	MSG("\n");
 	MSG("  [--cyclic-buffer BUFFER_SIZE]:\n");
 	MSG("      Specify the buffer size in kilo bytes for analysis in the cyclic mode.\n");
-	MSG("      Actually, the double of BUFFER_SIZE kilo bytes will be allocated in memory.\n");
 	MSG("      In the cyclic mode, the number of cycles is represented as:\n");
 	MSG("\n");
 	MSG("          num_of_cycles = system_memory / \n");
@@ -191,6 +207,12 @@ print_usage(void)
 	MSG("      Running in the non-cyclic mode, this mode uses the old filtering logic\n");
 	MSG("      same as v1.4.4 or before.\n");
 	MSG("      If you feel the cyclic mode is too slow, please try this mode.\n");
+	MSG("\n");
+	MSG("  [--non-mmap]:\n");
+	MSG("      Never use mmap(2) to read VMCORE even if it supports mmap(2).\n");
+	MSG("      Generally, reading VMCORE with mmap(2) is faster than without it,\n");
+	MSG("      so ordinary users don't need to specify this option.\n");
+	MSG("      This option is mainly for debugging.\n");
 	MSG("\n");
 	MSG("  [--xen-syms XEN-SYMS]:\n");
 	MSG("      Specify the XEN-SYMS to analyze Xen's memory usage.\n");
@@ -245,18 +267,23 @@ print_usage(void)
 	MSG("      LOGFILE. If a VMCORE does not contain VMCOREINFO for dmesg, it is\n");
 	MSG("      necessary to specfiy [-x VMLINUX] or [-i VMCOREINFO].\n");
 	MSG("\n");
+	MSG("  [--mem-usage]:\n");
+	MSG("      This option is only for x86_64.\n");
+	MSG("      This option is used to show the page numbers of current system in different\n");
+	MSG("      use. It should be executed in 1st kernel. By the help of this, user can know\n");
+	MSG("      how many pages is dumpable when different dump_level is specified. It analyzes\n");
+	MSG("      the 'System Ram' and 'kernel text' program segment of /proc/kcore excluding\n");
+	MSG("      the crashkernel range, then calculates the page number of different kind per\n");
+	MSG("      vmcoreinfo. So currently /proc/kcore need be specified explicitly.\n");
+	MSG("\n");
 	MSG("  [-D]:\n");
 	MSG("      Print debugging message.\n");
 	MSG("\n");
 	MSG("  [-f]:\n");
 	MSG("      Overwrite DUMPFILE even if it already exists.\n");
 	MSG("\n");
-	MSG("  [-h]:\n");
+	MSG("  [-h, --help]:\n");
 	MSG("      Show help message and LZO/snappy support status (enabled/disabled).\n");
-	MSG("\n");
-	MSG("  [-b <order>]\n");
-	MSG("      Specify the cache 2^order pages in ram when generating vmcore info\n");
-	MSG("      before writing to output\n");
 	MSG("\n");
 	MSG("  [-v]:\n");
 	MSG("      Show the version of makedumpfile.\n");
@@ -283,27 +310,30 @@ print_usage(void)
 void
 print_progress(const char *msg, unsigned long current, unsigned long end)
 {
-	int progress;
+	float progress;
 	time_t tm;
 	static time_t last_time = 0;
+	static unsigned int lapse = 0;
+	static const char *spinner = "/|\\-";
 
 	if (current < end) {
 		tm = time(NULL);
 		if (tm - last_time < 1)
 			return;
 		last_time = tm;
-		progress = current * 100 / end;
+		progress = (float)current * 100 / end;
 	} else
 		progress = 100;
 
 	if (flag_ignore_r_char) {
-		PROGRESS_MSG("%-" PROGRESS_MAXLEN "s: [%3d %%]\n",
-			     msg, progress);
+		PROGRESS_MSG("%-" PROGRESS_MAXLEN "s: [%5.1f %%] %c\n",
+			     msg, progress, spinner[lapse % 4]);
 	} else {
 		PROGRESS_MSG("\r");
-		PROGRESS_MSG("%-" PROGRESS_MAXLEN "s: [%3d %%] ",
-			     msg, progress);
+		PROGRESS_MSG("%-" PROGRESS_MAXLEN "s: [%5.1f %%] %c",
+			     msg, progress, spinner[lapse % 4]);
 	}
+	lapse++;
 }
 
 void

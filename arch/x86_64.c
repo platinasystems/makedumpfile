@@ -20,7 +20,7 @@
 #include "../makedumpfile.h"
 
 int
-is_vmalloc_addr(ulong vaddr)
+is_vmalloc_addr_x86_64(ulong vaddr)
 {
 	/*
 	 *  vmalloc, virtual memmap, and module space as VMALLOC space.
@@ -56,7 +56,7 @@ get_phys_base_x86_64(void)
 
 	for (i = 0; get_pt_load(i, &phys_start, NULL, &virt_start, NULL); i++) {
 		if ((virt_start >= __START_KERNEL_map) &&
-		    !(is_vmalloc_addr(virt_start))) {
+		    !(is_vmalloc_addr_x86_64(virt_start))) {
 
 			info->phys_base = phys_start -
 			    (virt_start & ~(__START_KERNEL_map));
@@ -281,7 +281,7 @@ vaddr_to_paddr_x86_64(unsigned long vaddr)
 	else
 		phys_base = 0;
 
-	if (is_vmalloc_addr(vaddr)) {
+	if (is_vmalloc_addr_x86_64(vaddr)) {
 		if ((paddr = vtop4_x86_64(vaddr)) == NOT_PADDR) {
 			ERRMSG("Can't convert a virtual address(%lx) to " \
 			    "physical address.\n", vaddr);
@@ -372,14 +372,20 @@ int get_xen_basic_info_x86_64(void)
 		info->xen_phys_start = info->xen_crash_info.v2->xen_phys_start;
 	}
 
+	info->xen_virt_start = SYMBOL(domain_list);
+
+	/*
+	 * Xen virtual mapping is aligned to 1 GiB boundary.
+	 * domain_list lives in bss which sits no more than
+	 * 1 GiB below beginning of virtual address space.
+	 */
+	info->xen_virt_start &= 0xffffffffc0000000;
+
 	if (info->xen_crash_info.com &&
-	    info->xen_crash_info.com->xen_major_version >= 4) {
-		info->xen_virt_start = XEN_VIRT_START_V4;
+	    info->xen_crash_info.com->xen_major_version >= 4)
 		info->directmap_virt_end = DIRECTMAP_VIRT_END_V4;
-	} else {
-		info->xen_virt_start = XEN_VIRT_START_V3;
+	else
 		info->directmap_virt_end = DIRECTMAP_VIRT_END_V3;
-	}
 
 	if (SYMBOL(pgd_l4) == NOT_FOUND_SYMBOL) {
 		ERRMSG("Can't get pml4.\n");
@@ -395,8 +401,15 @@ int get_xen_basic_info_x86_64(void)
 			return FALSE;
 		}
 		info->frame_table_vaddr = frame_table_vaddr;
-	} else
-		info->frame_table_vaddr = FRAMETABLE_VIRT_START;
+	} else {
+		if (info->xen_crash_info.com &&
+		    ((info->xen_crash_info.com->xen_major_version == 4 &&
+		      info->xen_crash_info.com->xen_minor_version >= 3) ||
+		      info->xen_crash_info.com->xen_major_version > 4))
+			info->frame_table_vaddr = FRAMETABLE_VIRT_START_V4_3;
+		else
+			info->frame_table_vaddr = FRAMETABLE_VIRT_START_V3;
+	}
 
 	if (!info->xen_crash_info.com ||
 	    info->xen_crash_info.com->xen_major_version < 4) {

@@ -45,6 +45,7 @@ struct pt_load_segment {
 };
 
 static int			nr_cpus;             /* number of cpu */
+static off_t			max_file_offset;
 
 /*
  * File information about /proc/vmcore:
@@ -254,6 +255,23 @@ note_type(void *note)
 }
 
 static int
+note_namesz(void *note)
+{
+	int size;
+	Elf64_Nhdr *note64;
+	Elf32_Nhdr *note32;
+
+	if (is_elf64_memory()) {
+		note64 = (Elf64_Nhdr *)note;
+		size = note64->n_namesz;
+	} else {
+		note32 = (Elf32_Nhdr *)note;
+		size = note32->n_namesz;
+	}
+	return size;
+}
+
+static int
 note_descsz(void *note)
 {
 	int size;
@@ -290,7 +308,7 @@ offset_note_desc(void *note)
 static int
 get_pt_note_info(void)
 {
-	int n_type, size_desc;
+	int n_type, size_name, size_desc;
 	off_t offset, offset_desc;
 	char buf[VMCOREINFO_XEN_NOTE_NAME_BYTES];
 	char note[MAX_SIZE_NHDR];
@@ -308,45 +326,51 @@ get_pt_note_info(void)
 			    name_memory, strerror(errno));
 			return FALSE;
 		}
+
+		n_type = note_type(note);
+		size_name = note_namesz(note);
+		size_desc   = note_descsz(note);
+		offset_desc = offset + offset_note_desc(note);
+
+		if (!size_name || size_name > sizeof(buf))
+			goto next_note;
+
 		if (read(fd_memory, &buf, sizeof(buf)) != sizeof(buf)) {
 			ERRMSG("Can't read the dump memory(%s). %s\n",
 			    name_memory, strerror(errno));
 			return FALSE;
 		}
-		n_type = note_type(note);
 
-		if (n_type == NT_PRSTATUS) {
-			nr_cpus++;
-			offset += offset_next_note(note);
-			continue;
-		}
-		offset_desc = offset + offset_note_desc(note);
-		size_desc   = note_descsz(note);
+		if (!strncmp(KEXEC_CORE_NOTE_NAME, buf,
+			     KEXEC_CORE_NOTE_NAME_BYTES)) {
+			if (n_type == NT_PRSTATUS) {
+				nr_cpus++;
+			}
 
+		} else if (!strncmp(VMCOREINFO_NOTE_NAME, buf,
+				    VMCOREINFO_NOTE_NAME_BYTES)) {
+			if (n_type == 0) {
+				set_vmcoreinfo(offset_desc, size_desc);
+			}
 		/*
 		 * Check whether /proc/vmcore contains vmcoreinfo,
 		 * and get both the offset and the size.
-		 *
-		 * NOTE: The owner name of xen should be checked at first,
-		 *       because its name is "VMCOREINFO_XEN" and the one
-		 *       of linux is "VMCOREINFO".
 		 */
-		if (!strncmp(VMCOREINFO_XEN_NOTE_NAME, buf,
-		    VMCOREINFO_XEN_NOTE_NAME_BYTES)) {
-			offset_vmcoreinfo_xen = offset_desc;
-			size_vmcoreinfo_xen   = size_desc;
-		} else if (!strncmp(VMCOREINFO_NOTE_NAME, buf,
-		    VMCOREINFO_NOTE_NAME_BYTES)) {
-			set_vmcoreinfo(offset_desc, size_desc);
-
+		} else if (!strncmp(VMCOREINFO_XEN_NOTE_NAME, buf,
+				    VMCOREINFO_XEN_NOTE_NAME_BYTES)) {
+			if (n_type == 0) {
+				offset_vmcoreinfo_xen = offset_desc;
+				size_vmcoreinfo_xen   = size_desc;
+			}
 		/*
 		 * Check whether /proc/vmcore contains xen's note.
 		 */
-		} else if (n_type == XEN_ELFNOTE_CRASH_INFO) {
-			flags_memory |= MEMORY_XEN;
-			offset_xen_crash_info = offset_desc;
-			size_xen_crash_info   = size_desc;
-
+		} else if (!strncmp("Xen", buf, 4)) {
+			if (n_type == XEN_ELFNOTE_CRASH_INFO) {
+				flags_memory |= MEMORY_XEN;
+				offset_xen_crash_info = offset_desc;
+				size_xen_crash_info   = size_desc;
+			}
 		/*
 		 * Check whether a source dumpfile contains eraseinfo.
 		 *   /proc/vmcore does not contain eraseinfo, because eraseinfo
@@ -354,9 +378,13 @@ get_pt_note_info(void)
 		 *   create /proc/vmcore.
 		 */
 		} else if (!strncmp(ERASEINFO_NOTE_NAME, buf,
-		    ERASEINFO_NOTE_NAME_BYTES)) {
-			set_eraseinfo(offset_desc, size_desc);
+				    ERASEINFO_NOTE_NAME_BYTES)) {
+			if (n_type == 0) {
+				set_eraseinfo(offset_desc, size_desc);
+			}
 		}
+
+	next_note:
 		offset += offset_next_note(note);
 	}
 	if (is_xen_memory())
@@ -367,6 +395,53 @@ get_pt_note_info(void)
 	return TRUE;
 }
 
+#define UNINITIALIZED  ((ulong)(-1))
+int set_kcore_vmcoreinfo(uint64_t vmcoreinfo_addr, uint64_t vmcoreinfo_len)
+{
+	int i;
+	ulong kvaddr;
+	off_t offset;
+	char note[MAX_SIZE_NHDR];
+	int size_desc;
+	off_t offset_desc;
+
+	offset = UNINITIALIZED;
+	kvaddr = (ulong)vmcoreinfo_addr | PAGE_OFFSET;
+
+	for (i = 0; i < num_pt_loads; ++i) {
+		struct pt_load_segment *p = &pt_loads[i];
+		if ((kvaddr >= p->virt_start) && (kvaddr < p->virt_end)) {
+			offset = (off_t)(kvaddr - p->virt_start) +
+			(off_t)p->file_offset;
+			break;
+		}
+	}
+
+	if (offset == UNINITIALIZED) {
+		ERRMSG("Can't get the offset of VMCOREINFO(%s). %s\n",
+		    name_memory, strerror(errno));
+		return FALSE;
+	}
+
+	if (lseek(fd_memory, offset, SEEK_SET) != offset) {
+		ERRMSG("Can't seek the dump memory(%s). %s\n",
+		    name_memory, strerror(errno));
+		return FALSE;
+	}
+
+	if (read(fd_memory, note, MAX_SIZE_NHDR) != MAX_SIZE_NHDR) {
+		ERRMSG("Can't read the dump memory(%s). %s\n",
+		    name_memory, strerror(errno));
+		return FALSE;
+	}
+
+	size_desc   = note_descsz(note);
+	offset_desc = offset + offset_note_desc(note);
+
+	set_vmcoreinfo(offset_desc, size_desc);
+
+	return TRUE;
+}
 
 /*
  * External functions.
@@ -422,6 +497,107 @@ paddr_to_offset2(unsigned long long paddr, off_t hint)
 		}
 	}
 	return offset;
+}
+
+unsigned long long
+page_head_to_phys_start(unsigned long long head_paddr)
+{
+	int i;
+	struct pt_load_segment *pls;
+
+	for (i = 0; i < num_pt_loads; i++) {
+		pls = &pt_loads[i];
+		if ((pls->phys_start <= head_paddr + info->page_size)
+		    && (head_paddr < pls->phys_end)) {
+			return (pls->phys_start > head_paddr) ?
+				pls->phys_start : head_paddr;
+		}
+	}
+
+	return 0;
+}
+
+unsigned long long
+page_head_to_phys_end(unsigned long long head_paddr)
+{
+	int i;
+	struct pt_load_segment *pls;
+
+	for (i = 0; i < num_pt_loads; i++) {
+		pls = &pt_loads[i];
+		if ((pls->phys_start <= head_paddr + info->page_size)
+		    && (head_paddr < pls->phys_end)) {
+			return (pls->phys_end < head_paddr + info->page_size) ?
+				pls->phys_end : head_paddr + info->page_size;
+		}
+	}
+
+	return 0;
+}
+
+/*
+ *  Calculate a start File Offset of PT_LOAD from a File Offset
+ *  of a page. If this function returns 0x0, the input page is
+ *  not in the memory image.
+ */
+off_t
+offset_to_pt_load_start(off_t offset)
+{
+	int i;
+	off_t pt_load_start;
+	struct pt_load_segment *pls;
+
+	for (i = pt_load_start = 0; i < num_pt_loads; i++) {
+		pls = &pt_loads[i];
+		if ((offset >= pls->file_offset)
+		    && (offset < pls->file_offset +
+			(pls->phys_end - pls->phys_start))) {
+			pt_load_start = pls->file_offset;
+			break;
+		}
+	}
+	return pt_load_start;
+}
+
+/*
+ *  Calculate a end File Offset of PT_LOAD from a File Offset
+ *  of a page. If this function returns 0x0, the input page is
+ *  not in the memory image.
+ */
+off_t
+offset_to_pt_load_end(off_t offset)
+{
+	int i;
+	off_t pt_load_end;
+	struct pt_load_segment *pls;
+
+	for (i = pt_load_end = 0; i < num_pt_loads; i++) {
+		pls = &pt_loads[i];
+		if ((offset >= pls->file_offset)
+		    && (offset < pls->file_offset +
+			(pls->phys_end - pls->phys_start))) {
+			pt_load_end = (off_t)(pls->file_offset +
+					      (pls->phys_end - pls->phys_start));
+			break;
+		}
+	}
+	return pt_load_end;
+}
+
+/*
+ * Judge whether the page is fractional or not.
+ */
+int
+page_is_fractional(off_t page_offset)
+{
+	if (page_offset % info->page_size != 0)
+		return TRUE;
+
+	if (offset_to_pt_load_end(page_offset) - page_offset
+	    < info->page_size)
+		return TRUE;
+
+	return FALSE;
 }
 
 unsigned long long
@@ -552,6 +728,198 @@ get_elf32_ehdr(int fd, char *filename, Elf32_Ehdr *ehdr)
 	return TRUE;
 }
 
+int
+get_elf_loads(int fd, char *filename)
+{
+	int i, j, phnum, elf_format;
+	Elf64_Phdr phdr;
+
+	/*
+	 * Check ELF64 or ELF32.
+	 */
+	elf_format = check_elf_format(fd, filename, &phnum, &num_pt_loads);
+	if (elf_format == ELF64)
+		flags_memory |= MEMORY_ELF64;
+	else if (elf_format != ELF32)
+		return FALSE;
+
+	if (!num_pt_loads) {
+		ERRMSG("Can't get the number of PT_LOAD.\n");
+		return FALSE;
+	}
+
+	/*
+	 * The below file information will be used as /proc/vmcore.
+	 */
+	fd_memory   = fd;
+	name_memory = filename;
+
+	pt_loads = calloc(sizeof(struct pt_load_segment), num_pt_loads);
+	if (pt_loads == NULL) {
+		ERRMSG("Can't allocate memory for the PT_LOAD. %s\n",
+		    strerror(errno));
+		return FALSE;
+	}
+	for (i = 0, j = 0; i < phnum; i++) {
+		if (!get_phdr_memory(i, &phdr))
+			return FALSE;
+
+		if (phdr.p_type != PT_LOAD)
+			continue;
+
+		if (j >= num_pt_loads)
+			return FALSE;
+		if (!dump_Elf_load(&phdr, j))
+			return FALSE;
+		j++;
+	}
+
+	return TRUE;
+}
+
+static int exclude_segment(struct pt_load_segment **pt_loads,
+			   unsigned int	*num_pt_loads, uint64_t start, uint64_t end)
+{
+	int i, j, tidx = -1;
+	unsigned long long	vstart, vend, kvstart, kvend;
+	struct pt_load_segment temp_seg = {0};
+	kvstart = (ulong)start | PAGE_OFFSET;
+	kvend = (ulong)end | PAGE_OFFSET;
+	unsigned long size;
+
+	for (i = 0; i < (*num_pt_loads); i++) {
+		vstart = (*pt_loads)[i].virt_start;
+		vend = (*pt_loads)[i].virt_end;
+		if (kvstart <  vend && kvend > vstart) {
+			if (kvstart != vstart && kvend != vend) {
+				/* Split load segment */
+				temp_seg.phys_start = end + 1;
+				temp_seg.phys_end = (*pt_loads)[i].phys_end;
+				temp_seg.virt_start = kvend + 1;
+				temp_seg.virt_end = vend;
+				temp_seg.file_offset = (*pt_loads)[i].file_offset
+					+ temp_seg.virt_start - (*pt_loads)[i].virt_start;
+
+				(*pt_loads)[i].virt_end = kvstart - 1;
+				(*pt_loads)[i].phys_end =  start - 1;
+
+				tidx = i+1;
+			} else if (kvstart != vstart) {
+				(*pt_loads)[i].phys_end = start - 1;
+				(*pt_loads)[i].virt_end = kvstart - 1;
+			} else {
+				(*pt_loads)[i].phys_start = end + 1;
+				(*pt_loads)[i].virt_start = kvend + 1;
+			}
+		}
+	}
+	/* Insert split load segment, if any. */
+	if (tidx >= 0) {
+		size = (*num_pt_loads + 1) * sizeof((*pt_loads)[0]);
+		(*pt_loads) = realloc((*pt_loads), size);
+		if (!(*pt_loads)) {
+			ERRMSG("Cannot realloc %ld bytes: %s\n",
+			       size + 0UL, strerror(errno));
+			exit(1);
+		}
+		for (j = (*num_pt_loads - 1); j >= tidx; j--)
+			(*pt_loads)[j+1] = (*pt_loads)[j];
+		(*pt_loads)[tidx] = temp_seg;
+		(*num_pt_loads)++;
+	}
+	return 0;
+}
+
+static int
+process_dump_load(struct pt_load_segment	*pls)
+{
+	unsigned long long paddr;
+
+	paddr = vaddr_to_paddr(pls->virt_start);
+	pls->phys_start  = paddr;
+	pls->phys_end    = paddr + (pls->virt_end - pls->virt_start);
+	DEBUG_MSG("process_dump_load\n");
+	DEBUG_MSG("  phys_start : %llx\n", pls->phys_start);
+	DEBUG_MSG("  phys_end   : %llx\n", pls->phys_end);
+	DEBUG_MSG("  virt_start : %llx\n", pls->virt_start);
+	DEBUG_MSG("  virt_end   : %llx\n", pls->virt_end);
+
+	return TRUE;
+}
+
+int get_kcore_dump_loads(void)
+{
+	struct pt_load_segment	*pls;
+	int i, j, loads = 0;
+
+	for (i = 0; i < num_pt_loads; ++i) {
+		struct pt_load_segment *p = &pt_loads[i];
+		if (is_vmalloc_addr(p->virt_start))
+			continue;
+		loads++;
+	}
+
+	if (!loads) {
+		ERRMSG("Can't get the correct number of PT_LOAD. %s\n",
+		    strerror(errno));
+		return FALSE;
+	}
+
+	pls = calloc(sizeof(struct pt_load_segment), loads);
+	if (pls == NULL) {
+		ERRMSG("Can't allocate memory for the PT_LOAD. %s\n",
+		    strerror(errno));
+		return FALSE;
+	}
+
+	for (i = 0, j = 0; i < num_pt_loads; ++i) {
+		struct pt_load_segment *p = &pt_loads[i];
+		if (is_vmalloc_addr(p->virt_start))
+			continue;
+		if (j >= loads)
+			return FALSE;
+
+		if (j == 0) {
+			offset_pt_load_memory = p->file_offset;
+			if (offset_pt_load_memory == 0) {
+				ERRMSG("Can't get the offset of page data.\n");
+				return FALSE;
+			}
+		}
+
+		pls[j] = *p;
+		process_dump_load(&pls[j]);
+		j++;
+	}
+
+	free(pt_loads);
+	pt_loads = pls;
+	num_pt_loads = loads;
+
+	for (i = 0; i < crash_reserved_mem_nr; i++)	{
+		exclude_segment(&pt_loads, &num_pt_loads,
+				crash_reserved_mem[i].start, crash_reserved_mem[i].end);
+	}
+
+	max_file_offset = 0;
+	for (i = 0; i < num_pt_loads; ++i) {
+		struct pt_load_segment *p = &pt_loads[i];
+		max_file_offset = MAX(max_file_offset,
+				      p->file_offset + p->phys_end - p->phys_start);
+	}
+
+	for (i = 0; i < num_pt_loads; ++i) {
+		struct pt_load_segment *p = &pt_loads[i];
+		DEBUG_MSG("LOAD (%d)\n", i);
+		DEBUG_MSG("  phys_start : %llx\n", p->phys_start);
+		DEBUG_MSG("  phys_end   : %llx\n", p->phys_end);
+		DEBUG_MSG("  virt_start : %llx\n", p->virt_start);
+		DEBUG_MSG("  virt_end   : %llx\n", p->virt_end);
+	}
+
+	return TRUE;
+}
+
 /*
  * Get ELF information about /proc/vmcore.
  */
@@ -609,6 +977,12 @@ get_elf_info(int fd, char *filename)
 		if(!dump_Elf_load(&phdr, j))
 			return FALSE;
 		j++;
+	}
+	max_file_offset = 0;
+	for (i = 0; i < num_pt_loads; ++i) {
+		struct pt_load_segment *p = &pt_loads[i];
+		max_file_offset = MAX(max_file_offset,
+				      p->file_offset + p->phys_end - p->phys_start);
 	}
 	if (!has_pt_note()) {
 		ERRMSG("Can't find PT_NOTE Phdr.\n");
@@ -842,3 +1216,8 @@ set_eraseinfo(off_t offset, unsigned long size)
 	size_eraseinfo   = size;
 }
 
+off_t
+get_max_file_offset(void)
+{
+	return max_file_offset;
+}
