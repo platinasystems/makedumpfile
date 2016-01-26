@@ -49,6 +49,7 @@ KDUMP_DUMP_DMESG=${KDUMP_DUMP_DMESG:=1}
 KDUMP_DIR="/var/lib/kdump"
 MAKEDUMP_ARGS=${MAKEDUMP_ARGS:="-c -d 31"}
 KDUMP_CMDLINE_APPEND=${KDUMP_CMDLINE_APPEND:="irqpoll maxcpus=1 nousb systemd.unit=kdump-tools.service"}
+KDUMP_KERNEL_HOOK="/etc/kernel/postinst.d/kdump-tools"
 [ -d $KDUMP_COREDIR ] || mkdir -p $KDUMP_COREDIR ;
 
 IOMEM_ADDR=`grep -i "Crash kernel" /proc/iomem | sed "s/-..*//" | sed "s/^[ 0]*/0x/"`
@@ -75,7 +76,7 @@ function kdump_help()
 {
 cat <<EOHELP
 Usage:
-kdump-config {help|test|show|status|load|unload|savecore|propagate}"
+kdump-config {help|test|show|status|load|unload|savecore|propagate|symlinks kernel-version}"
   help      - print this page
   test      - Do a dry-run of kdump kernel load command by showing
               the kernels and parameters that will be used and echo'ing
@@ -92,7 +93,9 @@ kdump-config {help|test|show|status|load|unload|savecore|propagate}"
               If using fadump, unregister.
   savecore  - use previously made links to save /proc/vmcore
   propagate - Send public ssh key to remote host for passwordless connection
-
+  symlinks  - Verify and create vmlinuz and initrd.img links in /var/lib/kdump
+              according to the provided kernel version. If the target
+              initrd.img file is absent, it will create it.
 EOHELP
 }
 
@@ -104,6 +107,17 @@ function kdump_show()
 	echo "KDUMP_COREDIR:    $KDUMP_COREDIR"
 	if [ "$DUMP_MODE" == "kdump" ]; then
 		echo "crashkernel addr: $IOMEM_ADDR"
+	fi
+	if [ -h "$KDUMP_KERNEL" ];then
+		echo "   "$(file $KDUMP_KERNEL)
+	else
+		echo "   "$KDUMP_KERNEL
+	fi
+	echo "kdump initrd: "
+	if [ -h "$KDUMP_INITRD" ];then
+		echo "   "$(file $KDUMP_INITRD)
+	else
+		echo "   "$KDUMP_INITRD
 	fi
 
 	if [ -n "$SSH" ];then
@@ -168,68 +182,52 @@ function kdump_test()
 	echo "  $KEXEC_CMD"
 }
 
-# Check if symlinks are correctly set if $KDUMP_DIR
+# Check if symlinks are correctly set according to the 
+# kernel version passed as argument, if $KDUMP_DIR
 # is used to store smaller initrd.img files (Ubuntu only)
-# Returns: 0/1/2 (success/broken/absent)
+# Returns: 0/1 (success/broken,absent or wrong version)
 #
 function check_symlink()
 {
 symlink=$1
+kern_version=$2
 
 	if [ -h "$KDUMP_DIR/$symlink" ];then
 		linkedfile=$(file "$KDUMP_DIR/$symlink" | rev | cut -d" " -f1 | rev)
 		if [ -e "$linkedfile" ];then
-			return 0
-		else
-			return 1
+			version=$(basename $linkedfile)
+			if [ ${version%%-*} == "vmlinux" ];then
+				version=${version#vmlinux-}
+			else
+				version=${version#$symlink-}
+			fi
+			if [ ${version} == $kern_version ]; then
+				return 0
+			fi
 		fi
-	else
-		return 2
 	fi
+	return 1
 }
 
 # Create a symlink
 function create_symlink()
 {
 link=$1
-	target=${link%-$KVER}
-	log_action_msg "Creating symlink $KDUMP_DIR/$target"
-	if [ $target == "vmlinuz" ];then
-		ln -fs /boot/$link $KDUMP_DIR/$target
-	else
-		ln -fs $KDUMP_DIR/$link $KDUMP_DIR/$target
-	fi
-}
+kernel_version=$2
 
-# Verify that the version of the symlink target
-# is equal to the current running kernel version
-# Returns : 0 if versions are the same, 1 otherwise
-function symlink_current()
-{
-target=$1
-
-	linkedfile=$(file $KDUMP_DIR/$target | rev | cut -d" " -f1 | rev)
-	if [ $target == "vmlinuz" ];then
-		linkversion=${linkedfile#/boot/vmlinuz-}
+	log_action_msg "Creating symlink $KDUMP_DIR/${link}"
+	if [ $link == "vmlinuz" ];then
+		ln -fs /boot/${link%?}?-${kernel_version} $KDUMP_DIR/$link
 	else
-		linkversion=${linkedfile#$KDUMP_DIR/initrd.img-}
-	fi
-
-	if [ $linkversion != $KVER ];then
-		return 1
-	else
-		return 0
+		ln -fs $KDUMP_DIR/${link}-${kernel_version} $KDUMP_DIR/$link
 	fi
 }
 
 # If $KDUMP_DIR is used to hold smaller initrd.img,
 # verify if the proper symlinks are in place for
-# initrd.img and vmlinuz.
-# If no link is found new links are created.
-# If they are found to be broken, remove the broken
-# links and recreate them
-# If existing links do not point to the running kernel
-# remove them and create new links
+# initrd.img and vmlinuz/vmlinux.
+# If no link is found, the links are broken or pointing
+# to the wrong version, new links are created.
 # Nothing is created if DRY_RUN = true. Only reporting
 # is done.
 # Returns: none. prints warnings or exit
@@ -238,32 +236,13 @@ function manage_symlinks()
 {
 	if [ -d "$KDUMP_DIR" ];then
 		for symlink in initrd.img vmlinuz;do
-			check_symlink $symlink
+			check_symlink $symlink $KVER
 			ret=$?
-			if [ $ret == 2 ];then
-				log_failure_msg "Missing symlink : $KDUMP_DIR/$symlink"
+			if [ $ret == 1 ];then
+				log_failure_msg "Invalid symlink : $KDUMP_DIR/$symlink"
 				if [ ! $DRY_RUN ];then
-					create_symlink $symlink-$KVER
+					create_symlink $symlink $KVER
 				fi
-			elif [ $ret == 1 ];then
-				log_failure_msg "Broken symlink : $(file $KDUMP_DIR/$symlink)"
-				if [ ! $DRY_RUN ];then
-					rm -f $KDUMP_DIR/$symlink
-					create_symlink $symlink-$KVER
-				fi
-			elif [ $ret == 0 ];then
-				symlink_current $symlink
-				current=$?
-				if [ $current == 1 ];then
-					log_action_msg "$KDUMP_DIR/$symlink pointing to wrong file"
-					if [ ! $DRY_RUN ];then
-						rm -f $KDUMP_DIR/$symlink
-						create_symlink $symlink-$KVER
-					fi
-				fi
-			else
-				### Should never get here
-				log_failure_msg "Invalid return code from check_symlink()"
 			fi
 		done
 	fi
@@ -447,6 +426,32 @@ function fadump_unregister()
 	logger -t $NAME "fadump un-registered successfully"
 }
 
+function kdump_create_symlinks()
+{
+kernel_version=$1
+
+	if [ -e $sys_kexec_crash -a `cat $sys_kexec_crash` -eq 1 ] ; then
+		log_failure_msg "Cannot change symbolic links when kdump is loaded"
+		exit 1
+	fi
+
+	if [ -e /boot/vmlinu[xz]-${kernel_version} ];then
+		create_symlink vmlinuz $kernel_version
+
+		if [ -f $KDUMP_DIR/initrd.img-${kernel_version} ]; then
+			create_symlink initrd.img ${kernel_version}
+		else
+			if [ -x $KDUMP_KERNEL_HOOK ];then
+				$KDUMP_KERNEL_HOOK $kernel_version
+				create_symlink initrd.img $kernel_version
+			else
+				log_failure_msg "Unable to locate kernel hook"
+			fi
+		fi
+	else
+		log_failure_msg "Invalid kernel version : $kernel_version"
+	fi
+}
 #
 # Load the already determined kdump kernel and kdump initrd using kexec
 # 	1: A KDUMP_CMDLINE in the defaults file overrides all.
@@ -854,11 +859,18 @@ case "$1" in
   propagate)
 	kdump_propagate;
 	;;
+  symlinks)
+	if [ -z $2 ];then
+		log_failure_msg "Invalid argument : missing kernel version"
+	else
+		kdump_create_symlinks $2
+	fi
+	;;
   help|-h*|--h*)
 	kdump_help
 	;;
   *)
-	echo "Usage: $0 {help|test|show|status|load|unload|savecore|propagate}"
+	echo "Usage: $0 {help|test|show|status|load|unload|savecore|propagate|symlinks kernel-version}"
 	exit 1
 	;;
 esac
