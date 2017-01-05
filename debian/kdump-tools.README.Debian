@@ -57,10 +57,14 @@ may still be required.  Specifically:
 
    B) x86 and x86_64
       Some systems can take advantage of the nmi watchdog.  Add 
-      nmi_watchdog=1 to the boot commandline to turn on the watchdog.
+      nmi_watchdog=panic to the boot commandline to turn on the watchdog.
       The nmi interrupt will call panic if activated.
 
    C) ia64
       some systems may need KDUMP_KEXEC_ARGS="--noio".  Use this
       if the system hangs after a panic, but before the kdump kernel 
       begins to boot.
+6. Magic SysRq key can be used to trigger a crash
+   You can manually trigger a kernel crash by using the magic SysRq
+   key. SysRq usage is described in details in the kernel documentation
+   (https://www.kernel.org/doc/html/latest/admin-guide/sysrq.html)
