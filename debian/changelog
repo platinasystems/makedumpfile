@@ -1,3 +1,20 @@
+makedumpfile (1:1.6.2-2) unstable; urgency=medium
+
+  [ dann frazier ]
+  * Make the kdump kernel cmdline consistent in comments, code & docs.
+  * Set reasonable default cmdlines for arm64.  (Closes: 883899)
+  * ppc64el: Remove ata_piix.prefer_ms_hyperv=0 from crashkernel cmdline
+  * ppc64el: add noirqdistrib to command line. (LP: #1658733)
+  * Add myself to Uploaders.
+  * Build-Depend on debhelper (>= 9.20160709) instead of dh-systemd,
+    which is obsolete. Thanks lintian.
+
+  [ Thadeu Lima de Souza Cascardo ]
+  * Set crashkernel for ppc64el to load at 128M instead of 32M. That allows
+    larger kernels to boot. (LP: #1728115)
+
+ -- dann frazier <dannf@debian.org>  Fri, 12 Jan 2018 08:47:19 -0700
+
 makedumpfile (1:1.6.2-1) unstable; urgency=medium
 
   [ Thadeu Lima de Souza Cascardo ]
