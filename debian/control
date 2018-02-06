@@ -2,7 +2,8 @@ Source: makedumpfile
 Section: devel
 Priority: optional
 Maintainer: Louis Bouchard <louis.bouchard@ubuntu.com>
-Uploaders: dann frazier <dannf@debian.org>
+Uploaders: dann frazier <dannf@debian.org>,
+ Thadeu Lima de Souza Cascardo <cascardo@debian.org>
 Standards-Version: 3.9.8
 Build-Depends: debhelper (>= 9.20160709),
  libelf-dev,
@@ -11,8 +12,8 @@ Build-Depends: debhelper (>= 9.20160709),
  libbz2-dev,
  liblzo2-dev,
  po-debconf
-Vcs-Git: git://anonscm.debian.org/collab-maint/makedumpfile.git
-Vcs-Browser: https://anonscm.debian.org/gitweb/?p=collab-maint/makedumpfile.git
+Vcs-Git: https://salsa.debian.org/debian/makedumpfile.git
+Vcs-Browser: https://salsa.debian.org/debian/makedumpfile
 
 Package: makedumpfile
 Architecture: i386 amd64 powerpc ia64 x32 arm64 armel armhf ppc64el s390x
@@ -29,6 +30,7 @@ Package: kdump-tools
 Architecture: i386 amd64 powerpc ia64 x32 arm64 armel armhf ppc64el s390x
 Depends: ${shlibs:Depends}, ${misc:Depends}, ${dist:Depends}, makedumpfile,
          debconf, bsdmainutils, lsb-base (>= 3.0-6), file, ucf
+Recommends: initramfs-tools-core
 Description: scripts and tools for automating kdump (Linux crash dumps)
  kdump-tools provides an init script and a configuration script for
  automating the use of kdump.  It uses the makedumpfile utility to
