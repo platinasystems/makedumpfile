@@ -1,3 +1,57 @@
+makedumpfile (1:1.6.4-1) unstable; urgency=medium
+
+  * New upstream release. Main new features:
+    o 5-level paging support
+      - 5-level paging on x86_64 system is supported from this version.
+
+    o --mem-usage support for arm64
+      - The makedumpfile --mem-usage option is now supported on arm64 system.
+        And the option was also tested on ppc64 and s390x by Bhupesh Sharma.
+
+    o Support new kernels
+      - The supported kernel is updated to 4.17.0 in this version.
+
+  * Changelog:
+    o New feature
+      - [PATCH v2 0/3] arm64: Add '--mem-usage' support (Bhupesh Sharma) f49ca13
+      - [PATCH v2 1/3] Add a new helper file 'tools.c' that provides some useful APIs (Bhupesh Sharma) 4d86cc7
+      - [PATCH v2 2/3] arm64: Add support to read symbols like _stext from '/proc/kallsyms' (Bhupesh Sharma) d1e7805
+      - [PATCH v2 3/3] Documentation: Update documentation regarding --mem-usage' option (Bhupesh Sharma) 8449bda
+      - [PATCH 0/4] Add 5-level paging support (Baoquan He) 342fdab
+      - [PATCH 2/4] Add pgtable_l5_enabled to number_table (Baoquan He) 8ae6f36
+      - [PATCH 3/4] Add a new function check_5level_paging() (Baoquan He) 33ca808
+      - [PATCH 4/4] arch/x86_64: Add 5-level paging support (Dou Liyang) 30a3214
+      - [PATCH] handle mem_section as either a pointer or an array (Thadeu Lima de Souza Cascardo) 14876c4
+      - [PATCH] ppc64: Increase the VA range (Hari Bathini) bd1ae9c
+
+    o Bugfix
+      - [PATCH] sadump: Fix a problem of PTI enabled kernel (Takao Indoh) 38de12a
+      - [PATCH] Fix a bug when multi-threads feature meets enospace (Zhou Wenjian) 63b05c9
+      - [PATCH] Fix array index out of bound exception (Lianbo Jiang) e5f96e7
+      - [PATCH] fix for hugepages filtering (Hari Bathini) 246801c
+      - [PATCH v2] Use integer arithmetics for the progress bar (Petr Tesarik) c6b79cb
+      - [PATCH 2/2] Check PG_swapbacked for swap cache pages (Petr Tesarik) ca1f31e
+      - [PATCH] Fix -g for change of mem_section (Kazuhito Hagio) f3c87e0
+      - [PATCH] Fix -i for KASLR (Kazuhito Hagio) 08db98c
+      - [PATCH] Fix validate_mem_section() (Kazuhito Hagio) 8f1aafa
+      - [PATCH] arm64: Fix calculation of page_offset in case we are running cases other than mem-usage (Bhupesh Sharma) cb7af5f
+
+    o Cleanup
+      - [PATCH v2] Always use bigger SECTION_MAP_MASK (Petr Tesarik) 6c6789f
+      - [PATCH 1/2] Add is_cache_page() helper to check if a page belongs to the cache (Petr Tesarik) 694f28c
+      - [PATCH 1/4] arch/x86_64: Cleanup the address translation of the 4-level page tables (Dou Liyang) acab2a2
+      - [PATCH] Fix some compilation warnings on x86 system (Kazuhito Hagio) 2148e43
+      - [PATCH] Update maintainers (Masaki Tachibana) bc7420b
+
+  * Remove 0003-sparsemem_extreme.patch, applied upstream.
+  * Update pt_PT debconf translation, thanks Rui Branco. (Closes: #898280)
+  * Update ru debconf translation, thanks Lev Lamberov. (Closes: #883139)
+  * Update da debconf translation, thanks Joe Dalton. (Closes: #856784)
+  * Make ADT check for systemd service.
+  * Skip test if crashkernel was not reserved.
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@debian.org>  Thu, 19 Jul 2018 16:34:06 -0300
+
 makedumpfile (1:1.6.3-2) unstable; urgency=medium
 
   * Add support for SPARSEMEM_EXTREME mem_section as a pointer. (LP: #1750021)

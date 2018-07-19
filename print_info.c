@@ -352,18 +352,18 @@ static void calc_delta(struct timeval *tv_start, struct timeval *delta)
 }
 
 /* produce less than 12 bytes on msg */
-static int eta_to_human_short (int secs, char* msg)
+static int eta_to_human_short (unsigned long secs, char* msg)
 {
 	strcpy(msg, "eta: ");
 	msg += strlen("eta: ");
 	if (secs < 100)
-		sprintf(msg, "%ds", secs);
+		sprintf(msg, "%lus", secs);
 	else if (secs < 100 * 60)
-		sprintf(msg, "%dm%ds", secs / 60, secs % 60);
+		sprintf(msg, "%lum%lus", secs / 60, secs % 60);
 	else if (secs < 48 * 3600)
-		sprintf(msg, "%dh%dm", secs / 3600, (secs / 60) % 60);
+		sprintf(msg, "%luh%lum", secs / 3600, (secs / 60) % 60);
 	else if (secs < 100 * 86400)
-		sprintf(msg, "%dd%dh", secs / 86400, (secs / 3600) % 24);
+		sprintf(msg, "%lud%luh", secs / 86400, (secs / 3600) % 24);
 	else
 		sprintf(msg, ">2day");
 	return 0;
@@ -373,13 +373,13 @@ static int eta_to_human_short (int secs, char* msg)
 void
 print_progress(const char *msg, unsigned long current, unsigned long end, struct timeval *start)
 {
-	float progress;
+	unsigned progress;	/* in promilles (tenths of a percent) */
 	time_t tm;
 	static time_t last_time = 0;
 	static unsigned int lapse = 0;
 	static const char *spinner = "/|\\-";
 	struct timeval delta;
-	double eta;
+	unsigned long eta;
 	char eta_msg[16] = " ";
 
 	if (current < end) {
@@ -387,23 +387,25 @@ print_progress(const char *msg, unsigned long current, unsigned long end, struct
 		if (tm - last_time < 1)
 			return;
 		last_time = tm;
-		progress = (float)current * 100 / end;
+		progress = current * 1000 / end;
 	} else
-		progress = 100;
+		progress = 1000;
 
-	if (start != NULL) {
+	if (start != NULL && progress != 0) {
 		calc_delta(start, &delta);
-		eta = delta.tv_sec + delta.tv_usec / 1e6;
-		eta = (100 - progress) * eta / progress;
+		eta = 1000 * delta.tv_sec + delta.tv_usec / 1000;
+		eta = eta / progress - delta.tv_sec;
 		eta_to_human_short(eta, eta_msg);
 	}
 	if (flag_ignore_r_char) {
-		PROGRESS_MSG("%-" PROGRESS_MAXLEN "s: [%5.1f %%] %c  %16s\n",
-			     msg, progress, spinner[lapse % 4], eta_msg);
+		PROGRESS_MSG("%-" PROGRESS_MAXLEN "s: [%3u.%u %%] %c  %16s\n",
+			     msg, progress / 10, progress % 10,
+			     spinner[lapse % 4], eta_msg);
 	} else {
 		PROGRESS_MSG("\r");
-		PROGRESS_MSG("%-" PROGRESS_MAXLEN "s: [%5.1f %%] %c  %16s",
-			     msg, progress, spinner[lapse % 4], eta_msg);
+		PROGRESS_MSG("%-" PROGRESS_MAXLEN "s: [%3u.%u %%] %c  %16s",
+			     msg, progress / 10, progress % 10,
+			     spinner[lapse % 4], eta_msg);
 	}
 	lapse++;
 }
