@@ -11,6 +11,10 @@ if [ -z "${version}" ]; then
 	exit 2
 fi
 
+if ! linux-version list | grep "${version}" > /dev/null ; then
+	exit 0
+fi
+
 # exit if kernel does not need an initramfs
 if [ "$INITRD" = 'No' ]; then
 	exit 0

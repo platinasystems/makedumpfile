@@ -1,3 +1,9 @@
+makedumpfile (1:1.6.4-2) unstable; urgency=medium
+
+  * Ignore uninstalled kernels when doing the kernel postinst. (Closes: #904524)
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@debian.org>  Thu, 26 Jul 2018 10:02:40 -0300
+
 makedumpfile (1:1.6.4-1) unstable; urgency=medium
 
   * New upstream release. Main new features:
