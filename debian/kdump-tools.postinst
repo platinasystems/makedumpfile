@@ -55,7 +55,7 @@ case "$1" in
 		s390x)
 			HAS_CRASHKERNEL="$(grep crashkernel /etc/zipl.conf)" || true
 			if test -z "$HAS_CRASHKERNEL"; then
-				sed -i "/parameters/{s|\"$| crashkernel=${DEF_PRESET}\"|}" /etc/zipl.conf
+				sed -i "s|^\s*parameters\s*=\s*\"\?|&crashkernel=${DEF_PRESET} |" /etc/zipl.conf
 				zipl
 			fi
 			CIO_IGNORE="$(cio_ignore -u -k)"
