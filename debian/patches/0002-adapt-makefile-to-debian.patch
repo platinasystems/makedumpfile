@@ -1,8 +1,17 @@
-Index: makedumpfile-1.5.9/Makefile
+From: Louis Bouchard <louis.bouchard@ubuntu.com>
+Date: Mon, 17 Dec 2018 15:21:09 -0200
+Subject: adapt-makefile-to-debian
+
 ===================================================================
---- makedumpfile-1.5.9.orig/Makefile	2015-11-24 12:59:52.503286944 +0100
-+++ makedumpfile-1.5.9/Makefile	2015-11-24 12:59:52.499286944 +0100
-@@ -80,26 +80,18 @@
+---
+ Makefile | 18 +++++-------------
+ 1 file changed, 5 insertions(+), 13 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 3123b5f..1b015b6 100644
+--- a/Makefile
++++ b/Makefile
+@@ -91,26 +91,18 @@ $(OBJ_ARCH): $(SRC_ARCH)
  
  makedumpfile: $(SRC_BASE) $(OBJ_PART) $(OBJ_ARCH)
  	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJ_PART) $(OBJ_ARCH) -rdynamic -o $@ $< $(LIBS)
