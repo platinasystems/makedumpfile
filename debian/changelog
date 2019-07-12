@@ -1,3 +1,9 @@
+makedumpfile (1:1.6.6-1) unstable; urgency=medium
+
+  * Update to new upstream version 1.6.6.
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@debian.org>  Fri, 12 Jul 2019 16:24:14 -0300
+
 makedumpfile (1:1.6.5-1) unstable; urgency=medium
 
   * Update to new upstream version 1.6.5.

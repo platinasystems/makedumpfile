@@ -495,7 +495,7 @@ do { \
 #define KVER_MIN_SHIFT 16
 #define KERNEL_VERSION(x,y,z) (((x) << KVER_MAJ_SHIFT) | ((y) << KVER_MIN_SHIFT) | (z))
 #define OLDEST_VERSION		KERNEL_VERSION(2, 6, 15) /* linux-2.6.15 */
-#define LATEST_VERSION		KERNEL_VERSION(4, 19, 4) /* linux-4.19.4 */
+#define LATEST_VERSION		KERNEL_VERSION(5, 1, 9) /* linux-5.1.9 */
 
 /*
  * vmcoreinfo in /proc/vmcore
@@ -617,6 +617,7 @@ unsigned long get_kvbase_arm64(void);
 #define VMEMMAP_END_5LEVEL	(0xffd5ffffffffffff) /* 5-level page table */
 
 #define __START_KERNEL_map	(0xffffffff80000000)
+#define KERNEL_IMAGE_SIZE_KASLR_ORIG	(1024*1024*1024) /* 3.14, or later */
 #define KVBASE			PAGE_OFFSET
 #define _SECTION_SIZE_BITS	(27)
 #define _MAX_PHYSMEM_BITS_ORIG		(40)
@@ -672,6 +673,7 @@ unsigned long get_kvbase_arm64(void);
 #define _MAX_PHYSMEM_BITS_ORIG  (44)
 #define _MAX_PHYSMEM_BITS_3_7   (46)
 #define _MAX_PHYSMEM_BITS_4_19  (47)
+#define _MAX_PHYSMEM_BITS_4_20  (51)
 #define REGION_SHIFT            (60UL)
 #define VMEMMAP_REGION_ID       (0xfUL)
 
@@ -1912,6 +1914,7 @@ struct number_table {
 	long	NR_FREE_PAGES;
 	long	N_ONLINE;
 	long	pgtable_l5_enabled;
+	long	sme_mask;
 
 	/*
  	* Page flags
@@ -1927,10 +1930,12 @@ struct number_table {
 	long    PG_hwpoison;
 
 	long	PAGE_BUDDY_MAPCOUNT_VALUE;
+	long	PAGE_OFFLINE_MAPCOUNT_VALUE;
 	long	SECTION_SIZE_BITS;
 	long	MAX_PHYSMEM_BITS;
 	long    HUGETLB_PAGE_DTOR;
 	long	phys_base;
+	long	KERNEL_IMAGE_SIZE;
 #ifdef __aarch64__
 	long 	VA_BITS;
 	unsigned long	PHYS_OFFSET;

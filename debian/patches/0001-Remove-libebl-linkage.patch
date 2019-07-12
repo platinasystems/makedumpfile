@@ -8,10 +8,10 @@ Description: Remove libebl from link options
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/Makefile b/Makefile
-index ea3c47d..3123b5f 100644
+index 1fdb628..df21b93 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -51,7 +51,7 @@ OBJ_PART=$(patsubst %.c,%.o,$(SRC_PART))
+@@ -50,7 +50,7 @@ OBJ_PART=$(patsubst %.c,%.o,$(SRC_PART))
  SRC_ARCH = arch/arm.c arch/arm64.c arch/x86.c arch/x86_64.c arch/ia64.c arch/ppc64.c arch/s390x.c arch/ppc.c arch/sparc64.c
  OBJ_ARCH=$(patsubst %.c,%.o,$(SRC_ARCH))
  

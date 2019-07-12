@@ -1,18 +1,17 @@
 # makedumpfile
 
-VERSION=1.6.5
-DATE=5 Dec 2018
+VERSION=1.6.6
+DATE=27 Jun 2019
 
 # Honour the environment variable CC
 ifeq ($(strip $CC),)
 CC	= gcc
 endif
 
-CFLAGS = -g -O2 -Wall -D_FILE_OFFSET_BITS=64 \
-	  -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE \
-	  -DVERSION='"$(VERSION)"' -DRELEASE_DATE='"$(DATE)"'
-CFLAGS_ARCH	= -g -O2 -Wall -D_FILE_OFFSET_BITS=64 \
-		    -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE
+CFLAGS_BASE := $(CFLAGS) -g -O2 -Wall -D_FILE_OFFSET_BITS=64 \
+		-D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE
+CFLAGS      := $(CFLAGS_BASE) -DVERSION='"$(VERSION)"' -DRELEASE_DATE='"$(DATE)"'
+CFLAGS_ARCH := $(CFLAGS_BASE)
 # LDFLAGS = -L/usr/local/lib -I/usr/local/include
 
 HOST_ARCH := $(shell uname -m)
