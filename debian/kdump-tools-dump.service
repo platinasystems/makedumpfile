@@ -1,5 +1,7 @@
 [Unit]
 Description=Kernel crash dump capture service
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=oneshot
@@ -8,6 +10,3 @@ EnvironmentFile=/etc/default/kdump-tools
 ExecStart=/etc/init.d/kdump-tools start
 ExecStop=/etc/init.d/kdump-tools stop
 RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
