@@ -7,7 +7,7 @@ else
 	SUBSTVARS = -Vdist:Depends="kexec-tools"
 endif
 
-KDUMP_CMDLINE_APPEND = systemd.unit=kdump-tools-dump.service
+KDUMP_CMDLINE_APPEND = reset_devices systemd.unit=kdump-tools-dump.service
 ifeq ($(DEB_HOST_ARCH),arm64)
 	KDUMP_CMDLINE_APPEND += nr_cpus=1
 else ifeq ($(DEB_HOST_ARCH),ppc64el)

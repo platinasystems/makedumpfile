@@ -891,7 +891,28 @@ function kdump_propagate()
 
 }
 
+load()
+{
+	if [ "$DUMP_MODE" == "fadump" ]; then
+		check_fadump_support;
+		fadump_register
+	else
+		check_kdump_support;
+		kdump_create_symlinks $KVER;
+		manage_symlinks;
+		locate_kdump_kernel;
+		kdump_load
+	fi
+}
 
+unload()
+{
+	if [ "$DUMP_MODE" == "fadump" ]; then
+		fadump_unregister
+	else
+		kdump_unload
+	fi
+}
 
 case "$1" in
   test)
@@ -916,23 +937,14 @@ case "$1" in
 	kdump_show
 	;;
   load)
-	if [ "$DUMP_MODE" == "fadump" ]; then
-		check_fadump_support;
-		fadump_register
-	else
-		check_kdump_support;
-		kdump_create_symlinks $KVER;
-		manage_symlinks;
-		locate_kdump_kernel;
-		kdump_load
-	fi
+	load
 	;;
   unload)
-	if [ "$DUMP_MODE" == "fadump" ]; then
-		fadump_unregister
-	else
-		kdump_unload
-	fi
+	unload
+	;;
+  reload)
+	unload
+	load
 	;;
   status)
 	if [ "$DUMP_MODE" == "fadump" ]; then
