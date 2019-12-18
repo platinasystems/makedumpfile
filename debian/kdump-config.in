@@ -65,6 +65,7 @@ sys_kexec_crash=/sys/kernel/kexec_crash_loaded
 sys_fadump_enabled=/sys/kernel/fadump_enabled
 sys_fadump_registered=/sys/kernel/fadump_registered
 kexec_cmd_file=$KDUMP_COREDIR/kexec_cmd
+lock_file=$KDUMP_COREDIR/kdump_lock
 
 # DUMP_MODE = kdump/fadump
 # The default dump mode is kdump.
@@ -914,6 +915,25 @@ unload()
 	fi
 }
 
+reload()
+{
+	unload
+	load
+}
+
+condreload()
+{
+	local sys_loaded="$sys_kexec_crash"
+	if [ "$DUMP_MODE" == "fadump" ] ; then
+		check_fadump_support
+		sys_loaded="$sys_fadump_registered"
+	fi
+	flock 9
+	if [ -e $sys_loaded -a `cat $sys_loaded` -eq 1 ] ; then
+		reload
+	fi
+}
+
 case "$1" in
   test)
 	DRY_RUN="true"
@@ -943,8 +963,10 @@ case "$1" in
 	unload
 	;;
   reload)
-	unload
-	load
+	reload
+	;;
+  condreload|try-reload)
+	condreload 9>$lock_file
 	;;
   status)
 	if [ "$DUMP_MODE" == "fadump" ]; then

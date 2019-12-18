@@ -1,3 +1,12 @@
+makedumpfile (1:1.6.6-4) unstable; urgency=medium
+
+  * Let the kernel decide the crashkernel offset for ppc64el (LP: #1741860)
+  * kdump-config: implement try-reload
+  * udev: hotplug: use try-reload
+  * Set Rules-Requires-Root to no
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@debian.org>  Wed, 18 Dec 2019 10:50:47 -0300
+
 makedumpfile (1:1.6.6-3) unstable; urgency=medium
 
   * Add a reload command.
