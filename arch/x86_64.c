@@ -69,7 +69,7 @@ get_kaslr_offset_x86_64(unsigned long vaddr)
 					strtoul(buf+strlen(STR_KERNELOFFSET),&endp,16);
 		}
 	}
-	if (!info->kaslr_offset)
+	if (!info->kaslr_offset || !vaddr)
 		return 0;
 
 	if (NUMBER(KERNEL_IMAGE_SIZE) != NOT_FOUND_NUMBER)
@@ -77,14 +77,14 @@ get_kaslr_offset_x86_64(unsigned long vaddr)
 	else
 		kernel_image_size = KERNEL_IMAGE_SIZE_KASLR_ORIG;
 
+	/*
+	 * Returns the kaslr offset only if the vaddr needs it to be added,
+	 * i.e. only kernel text address for now.  Otherwise returns 0.
+	 */
 	if (vaddr >= __START_KERNEL_map &&
 			vaddr < __START_KERNEL_map + kernel_image_size)
 		return info->kaslr_offset;
 	else
-		/*
-		 * TODO: we need to check if it is vmalloc/vmmemmap/module
-		 * address, we will have different offset
-		 */
 		return 0;
 }
 
@@ -673,11 +673,21 @@ find_vmemmap_x86_64()
 
 	if (init_level4_pgt == NOT_FOUND_SYMBOL) {
 		ERRMSG("init_level4_pgt/init_top_pgt not found\n");
-		return FAILED;
+		return FALSE;
 	}
 
 	if (NUMBER(sme_mask) != NOT_FOUND_NUMBER)
 		pmask &= ~(NUMBER(sme_mask));
+
+	/*
+	 * vmemmap region can be randomized by KASLR.
+	 * (currently we don't utilize info->vmemmap_end on x86_64.)
+	 */
+	if (info->mem_map_data &&
+	    info->mem_map_data[0].mem_map != NOT_MEMMAP_ADDR)
+		info->vmemmap_start = info->mem_map_data[0].mem_map;
+
+	DEBUG_MSG("vmemmap_start: %16lx\n", info->vmemmap_start);
 
 	pagestructsize = size_table.page;
 	hugepagesize = PTRS_PER_PMD * info->page_size;
@@ -705,7 +715,7 @@ find_vmemmap_x86_64()
 		if (!readmem(PADDR, (unsigned long long)pgdp, (void *)&pud_addr,
 								sizeof(unsigned long))) {
 			ERRMSG("Can't get pgd entry for slot %d.\n", pgd_index);
-			return FAILED;
+			return FALSE;
 		}
 
 		/* mask the pgd entry for the address of the pud page */
@@ -716,7 +726,7 @@ find_vmemmap_x86_64()
 		if (!readmem(PADDR, (unsigned long long)pud_addr, (void *)pud_page,
 					PTRS_PER_PUD * sizeof(unsigned long))) {
 			ERRMSG("Can't get pud entry for pgd slot %ld.\n", pgdindex);
-			return FAILED;
+			return FALSE;
 		}
 		/* step thru each pmd address in the pud page */
 		/* pudp points to an entry in the pud page */
@@ -729,7 +739,7 @@ find_vmemmap_x86_64()
 			if (!readmem(PADDR, pmd_addr, (void *)pmd_page,
 					PTRS_PER_PMD * sizeof(unsigned long))) {
 				ERRMSG("Can't get pud entry for slot %ld.\n", pudindex);
-				return FAILED;
+				return FALSE;
 			}
 			/* pmdp points to an entry in the pmd */
 			for (pmdp = (unsigned long *)pmd_page, pmdindex = 0;
@@ -805,7 +815,7 @@ find_vmemmap_x86_64()
 					num_pmds_valid++;
 					if (!(pmd & _PAGE_PSE)) {
 						printf("vmemmap pmd not huge, abort\n");
-						return FAILED;
+						return FALSE;
 					}
 				} else {
 					if (last_valid) {
@@ -937,7 +947,7 @@ find_vmemmap_x86_64()
 		i++;
 	} while (cur != vmaphead);
 	nr_gvmem_pfns = i;
-	return COMPLETED;
+	return TRUE;
 }
 
 #endif /* x86_64 */
