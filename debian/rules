@@ -17,7 +17,7 @@ else
 endif
 
 %:
-	dh $@ --with=systemd
+	dh $@
 
 override_dh_gencontrol:
 	dh_gencontrol -- $(SUBSTVARS)
