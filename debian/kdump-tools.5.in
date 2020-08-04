@@ -1,5 +1,5 @@
 .\"
-.TH "kdump-tools.conf" "5" "February 2015" "kdump-tools v1.1.4" "Linux System Administrator's Manual"
+.TH "kdump-tools.conf" "5" "Jul 2020" "kdump-tools v1.6.7-2" "Linux System Administrator's Manual"
 .SH NAME
 kdump-tools.conf \- configuration file for the kdump-tools init script
 .SH SYNOPSIS
@@ -26,27 +26,6 @@ will take any action.
 If not set or 0, the 
 .B kdump-tools
 init script will not run.
-.TP
-.B KDUMP_SYSCTL
-Controls when a panic occurs, using the 
-.BR sysctl (8)
-interface.  Each time a kdump kernel is loaded, 
-.RI \*(lq "sysctl -w $KDUMP_SYSCTL" \*(rq
-is also executed, thus allowing the system adiminstrator 
-to maintain customizable conditions for a kdump.  
-The contents of this variable should be the
-.RI \*(lq "variable=value ..." \*(rq 
-portion of the 
-.RI \*(lq "sysctl -w" \*(rq 
-command.  If not set, 
-.RI \*(lq  "kernel.panic_on_oops=1" \*(rq
-will be used.  This feature can be disabled by setting 
-.br
-.B KDUMP_SYSCTL=\*(lq  \*(rq
-
-See
-.BR sysctl (8)
-for more info.
 .\"
 .\" # ---------------------------------------------------------------------------
 .\"
@@ -295,12 +274,29 @@ The kdump kernel must be configured with:
 .\"
 .\" # ---------------------------------------------------------------------------
 .\"
-.SH EXAMPLES
+.SH SYSCTLS
 .PP
-Also panic and kdump on oom:
-.RS
-KDUMP_SYSCTL="kernel.panic_on_oops=1 vm.panic_on_oom=1"
-.RE
+Currently kdump-tools automatically sets the kernel sysctl for panic on oops,
+in order to collect a dump in this case. If the users want more panic triggers,
+like panic on OOM, or when a NMI is detected, it's recommended that they edit
+the sysctl configuration files (/etc/sysctl.conf or files on /etc/sysctl.d) in
+order to do so, and/or apply the sysctl settings with sysctl tool.
+.SS Sysctl handling *during a kdump*
+.PP
+kdump-tools allows users to configure sysctls overrides on kdump environment;
+this is specially useful to prevent sysctls from the regular boot to mess with
+the resource-impaired kdump environment.
+.PP
+The mechanism is restricted to kdump boot and will not affect regular boots. In
+order to add overrides, user should edit the file
+.I /etc/kdump/sysctl.conf.
+.PP
+By default, hugepages overrides are set and is highly recommended to keep them
+in the file, to prevent kdump out-of-memory conditions.
+.\"
+.\" # ---------------------------------------------------------------------------
+.\"
+.SH EXAMPLES
 .PP 
 Use this option on x86 systems with PAE and more than 4 gig of memory:
 .RS
@@ -325,6 +321,9 @@ an init script to automatically load a kdump kernel, or save a vmcore and reboot
 the
 .B kdump-tools 
 configuration file
+.TP 25
+.I /etc/kdump/sysctl.conf
+kdump-tools sysctl override file
 .TP 25
 .I /var/crash/kernel_link
 a link to the current debug kernel

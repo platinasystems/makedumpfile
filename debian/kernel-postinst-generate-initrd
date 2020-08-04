@@ -56,6 +56,16 @@ if ! [ -e "$initramfsdir/initramfs.conf" ];then
 	exit 2
 fi
 
+# Mark our custom initramfs.conf to indicate that kdump-tools
+# hooks/scripts should run/get included in our minimal initrd.
+#
+# Unfortunately, this is not true for Debian. OPTION=VAR is a
+# control provided only by Ubuntu initramfs-tools, so this is
+# innocuous /harmless on Debian - kept here for better code
+# sync between Debian and Ubuntu. We needed special checks on
+# hook/script in Debian to prevent them on regular initrd.
+echo "KDUMP=y" >> $initramfsdir/initramfs.conf
+
 # Cleaning up existing initramfs with same version
 # as mkinitramfs do not have a force option
 if [ -e "$kdumpdir/initrd.img-${version}" ];then

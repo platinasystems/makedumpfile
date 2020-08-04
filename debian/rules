@@ -35,8 +35,12 @@ debian/kdump-tools.5: debian/kdump-tools.5.in
 
 override_dh_install: debian/kdump-config debian/kdump-tools.conf debian/kdump-tools.5
 	dh_install
+	dh_installdirs
 	install -D -m 755 debian/kernel-postinst-generate-initrd debian/kdump-tools/etc/kernel/postinst.d/kdump-tools
 	install -D -m 755 debian/kernel-postrm-delete-initrd debian/kdump-tools/etc/kernel/postrm.d/kdump-tools
+	install -D -m 755 debian/initramfs.hook debian/kdump-tools/usr/share/initramfs-tools/hooks/kdump-tools
+	install -D -m 755 debian/initramfs.local-bottom \
+debian/kdump-tools/usr/share/initramfs-tools/scripts/local-bottom/kdump-sysctl
 	[ ! -f debian/kdump-tools.grub.$(DEB_HOST_ARCH) ] || \
 		install -D -m 644 debian/kdump-tools.grub.$(DEB_HOST_ARCH) debian/kdump-tools/etc/default/grub.d/kdump-tools.cfg
 	[ -f debian/kdump-tools.grub.$(DEB_HOST_ARCH) ] || \

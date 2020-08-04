@@ -3,16 +3,8 @@
 # USE_KDUMP - controls kdump will be configured
 #     0 - kdump kernel will not be loaded
 #     1 - kdump kernel will be loaded and kdump is configured
-# KDUMP_SYSCTL - controls when a panic occurs, using the sysctl 
-#     interface.  The contents of this variable should be the
-#     "variable=value ..." portion of the 'sysctl -w ' command.
-#     If not set, the default value "kernel.panic_on_oops=1" will
-#     be used.  Disable this feature by setting KDUMP_SYSCTL=" "
-#     Example - also panic on oom:
-#         KDUMP_SYSCTL="kernel.panic_on_oops=1 vm.panic_on_oom=1"
 #
 USE_KDUMP=1
-#KDUMP_SYSCTL="kernel.panic_on_oops=1"
 
 
 # ---------------------------------------------------------------------------

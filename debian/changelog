@@ -1,3 +1,15 @@
+makedumpfile (1:1.6.7-4) unstable; urgency=medium
+
+  [ Guilherme G. Piccoli ]
+  * kdump-tools: Remove KDUMP_SYSCTL for good
+  * kdump-tools: Add sysctl override mechanism
+  * kdump-tools: Cope with the lack of initramfs-tools OPTION=VAR feature in Debian
+
+  [ Thadeu Lima de Souza Cascardo ]
+  * Add proper dependencies to DEP8 tests
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@debian.org>  Tue, 04 Aug 2020 17:21:46 -0300
+
 makedumpfile (1:1.6.7-3) unstable; urgency=medium
 
   [ Debian Janitor ]

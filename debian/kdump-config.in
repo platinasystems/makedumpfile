@@ -43,7 +43,7 @@ KVER=`uname -r`
 ARCH=`uname -m`
 
 # Set up defaults
-KDUMP_SYSCTL=${KDUMP_SYSCTL:="kernel.panic_on_oops=1"}
+KDUMP_SYSCTL_FILE="/etc/kdump/sysctl.conf"
 KDUMP_COREDIR=${KDUMP_COREDIR:=/var/crash}
 KDUMP_DUMP_DMESG=${KDUMP_DUMP_DMESG:=1}
 KDUMP_DIR="/var/lib/kdump"
@@ -107,10 +107,9 @@ EOHELP
 
 function kdump_show()
 {
-	echo "DUMP_MODE:        $DUMP_MODE"
-	echo "USE_KDUMP:        $USE_KDUMP"
-	echo "KDUMP_SYSCTL:     $KDUMP_SYSCTL"
-	echo "KDUMP_COREDIR:    $KDUMP_COREDIR"
+	echo "DUMP_MODE:		${DUMP_MODE}"
+	echo "USE_KDUMP:		${USE_KDUMP}"
+	echo "KDUMP_COREDIR:		${KDUMP_COREDIR}"
 	if [ "$DUMP_MODE" == "kdump" ]; then
 		echo "crashkernel addr: $IOMEM_ADDR"
 	fi
@@ -169,11 +168,10 @@ function kdump_show()
 
 function kdump_test()
 {
-	echo "USE_KDUMP:         $USE_KDUMP"
-	echo "KDUMP_SYSCTL:      $KDUMP_SYSCTL"
-	echo "KDUMP_COREDIR:     $KDUMP_COREDIR"
-	echo "crashkernel addr:  $IOMEM_ADDR"
-	echo "kdump kernel addr: $KDUMP_ADDR"
+	echo "USE_KDUMP:		${USE_KDUMP}"
+	echo "KDUMP_COREDIR:		${KDUMP_COREDIR}"
+	echo "crashkernel addr		${IOMEM_ADDR}"
+	echo "kdump kernel addr		${KDUMP_ADDR}"
 	echo "kdump kernel:"
 	if [ -h "$KDUMP_KERNEL" ];then
 		echo "   "$(file $KDUMP_KERNEL)
@@ -425,6 +423,18 @@ function locate_kdump_kernel()
 	return 0;
 }
 
+# Applies the panic_on_oops trigger on regular kernel
+function apply_panic_triggers()
+{
+	SYSCTL_BIN=$(which sysctl)
+	if [ -z ${SYSCTL_BIN} ] || [ ! -x ${SYSCTL_BIN} ]; then
+		log_warning_msg "kdump-config couldn't set panic trigger (sysctl binary not available)"
+		return 0 # prevents bad return carrying
+	fi
+
+	${SYSCTL_BIN} -w "kernel.panic_on_oops=1" &>/dev/null
+}
+
 # Register firmware-assisted dump as the dump mechanism
 # Returns: none. prints warnings or exit
 function fadump_register()
@@ -443,11 +453,8 @@ function fadump_register()
 	log_success_msg "fadump registered successfully"
 	logger -t $NAME "fadump registered successfully"
 
-	# Last step: make sure panic_on_oops is enabled
-        PANIC_ON_OOPS=`/sbin/sysctl kernel.panic_on_oops | cut -d" " -f3`
-        if [ $PANIC_ON_OOPS != "1" ] ; then
-                sysctl -w kernel.panic_on_oops=1 >/dev/null
-        fi
+	# Apply panic triggers according to config file
+	apply_panic_triggers
 }
 
 # Returns: none. prints warnings or exit
@@ -562,12 +569,8 @@ function kdump_load()
 		[ ! $DRY_RUN ] && exit 1;
 	fi
 
-	# Last step: make sure panic_on_oops is enabled
-        PANIC_ON_OOPS=`/sbin/sysctl kernel.panic_on_oops | cut -d" " -f3`
-        if [ $PANIC_ON_OOPS != "1" ] ; then
-                sysctl -w kernel.panic_on_oops=1 >/dev/null
-        fi
-
+	# Apply panic triggers according to config file
+	apply_panic_triggers
 }
 
 # Returns: none. prints warnings or exit
@@ -892,6 +895,20 @@ function kdump_propagate()
 
 }
 
+# Checks if kdump sysctl overrides changed and if so,
+# forces kdump initrd to be recreated.
+function check_sysctl_change()
+{
+	kernel_version=$1
+
+	cmp -s "${KDUMP_SYSCTL_FILE}" "${KDUMP_DIR}/latest_sysctls-${kernel_version}"
+	if [ $? != 0 ]; then
+		rm -f "$KDUMP_DIR/initrd.img-${kernel_version}"
+	fi
+
+	cp ${KDUMP_SYSCTL_FILE} "${KDUMP_DIR}/latest_sysctls-${kernel_version}"
+}
+
 load()
 {
 	if [ "$DUMP_MODE" == "fadump" ]; then
@@ -899,6 +916,7 @@ load()
 		fadump_register
 	else
 		check_kdump_support;
+		check_sysctl_change $KVER
 		kdump_create_symlinks $KVER;
 		manage_symlinks;
 		locate_kdump_kernel;
