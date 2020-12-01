@@ -23,17 +23,16 @@ KDUMP_SCRIPT=/usr/sbin/kdump-config
 KDUMP_DEFAULTS=/etc/default/kdump-tools
 [ -r $KDUMP_DEFAULTS ] && . $KDUMP_DEFAULTS
 
-[ $USE_KDUMP -ne 0 ] || exit 0;
+[ "$USE_KDUMP" -ne 0 ] || exit 0;
 
 case "$1" in
   start)
 	#
 	# If we have a /proc/vmcore, then we just kdump'ed
 	#
-	if [ -e $VMCORE_FILE -a -s $VMCORE_FILE ]; then
-		echo -n "Starting $DESC: "
-		$KDUMP_SCRIPT savecore
-		if [ $? -ne 0 -a -n "$KDUMP_FAIL_CMD" ] ; then
+	if [ -e $VMCORE_FILE ] && [ -s $VMCORE_FILE ]; then
+		printf "Starting %s: " "$DESC"
+		if ! $KDUMP_SCRIPT savecore && [ -n "$KDUMP_FAIL_CMD" ] ; then
 			$KDUMP_FAIL_CMD ;
 		else
 			date -R ;
@@ -43,12 +42,12 @@ case "$1" in
 	# Else, we've just booted and need to load the kdump kernel
 	#
 	else
-		echo -n "Starting $DESC: "
+		printf "Starting %s: " "$DESC"
 		$KDUMP_SCRIPT load
 	fi
 	;;
   stop)
-	echo -n "Stopping $DESC: "
+	printf "Stopping %s: " "$DESC"
 	$KDUMP_SCRIPT unload
 	;;
   status)

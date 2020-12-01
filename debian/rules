@@ -1,7 +1,8 @@
 #!/usr/bin/make -f
 
-DEB_HOST_ARCH := $(shell dpkg-architecture -qDEB_HOST_ARCH)
-ifeq ($(shell dpkg-vendor --derives-from Ubuntu && echo yes),yes)
+include /usr/share/dpkg/default.mk
+
+ifeq ($(shell $(call dpkg_vendor_derives_from,Ubuntu)),yes)
 	SUBSTVARS = -Vdist:Depends="kexec-tools (>= 1:2.0.10-2)"
 else
 	SUBSTVARS = -Vdist:Depends="kexec-tools"
@@ -60,3 +61,8 @@ override_dh_auto_clean:
 	rm -f debian/kdump-tools.maintscript
 	rm -f debian/kdump-config debian/kdump-tools.conf debian/kdump-tools.5
 	dh_auto_clean
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	shellcheck -e SC1090,SC1091 $(shell find debian -maxdepth 1 -type f | xargs grep -l '^#! */bin/\(ba\)\?sh')
+endif

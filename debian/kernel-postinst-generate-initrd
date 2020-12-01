@@ -78,7 +78,7 @@ if mkinitramfs -d "$initramfsdir" -o "$kdumpdir/initrd.img-${version}.new" "${ve
 	mv "$kdumpdir/initrd.img-${version}.new" "$kdumpdir/initrd.img-${version}"
 else
 	mkinitramfs_return="$?"
-	rm -f "${initramfs}.new"
-	echo "update-initramfs: failed for ${initramfs} with $mkinitramfs_return." >&2
+	rm -f "$kdumpdir/initrd.img-${version}.new"
+	echo "update-initramfs: failed for $kdumpdir/initrd.img-${version} with $mkinitramfs_return." >&2
         exit $mkinitramfs_return
 fi

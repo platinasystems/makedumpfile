@@ -6,6 +6,7 @@
 # OPTION=VAR is a control provided only by Ubuntu initramfs-tools,
 # so this is innocuous and harmless on Debian - kept here for
 # better code sync between Debian and Ubuntu.
+# shellcheck disable=SC2034
 OPTION=KDUMP
 
 PREREQ=""

@@ -18,6 +18,7 @@
      #
      # mkdir /usr/local/include/elfutils/
      # cp ./libdw/libdw.h   /usr/local/include/elfutils/libdw.h
+     # cp ./libdwfl/libdwfl.h /usr/local/include/elfutils/libdwfl.h
      # cp ./libdw/dwarf.h   /usr/local/include/dwarf.h
      # cp ./libelf/libelf.h /usr/local/include/libelf.h
      # cp ./libelf/gelf.h   /usr/local/include/gelf.h
@@ -30,7 +31,7 @@
 
 * BUILD & INSTALL
   1.Get the latest makedumpfile from the following site:
-    https://sourceforge.net/projects/makedumpfile/
+    https://github.com/makedumpfile/makedumpfile
   2.Uncompress the tar file:
     # tar -zxvf makedumpfile-x.y.z.tar.gz
   3.Enter the makedumpfile subdirectory:
@@ -133,6 +134,11 @@
   5.2    |    | ** |    |    |    | ** |    | -- |    | OK |    |    |
   5.3    |    | ** |    |    |    | ** |    | -- |    | OK |    |    |
   5.4    | OK | ** |    |    |    | ** |    | -- | OK | OK |    |    |
+  5.5    |    | ** |    |    |    | ** |    | -- |    | OK |    |    |
+  5.6    |    | ** |    |    |    | ** |    | -- |    | OK |    |    |
+  5.7    |    | ** |    |    |    | ** |    | -- |    | OK |    |    |
+  5.8    |    | ** |    |    |    | ** |    | -- |    | OK |    |    |
+  5.9    |    | ** |    |    |    | ** |    | -- |    | OK |    |    |
 
   OK    : Support.
   --    : Not support.
@@ -199,12 +205,19 @@
 
 
 * REFERENCES
-  https://sourceforge.net/projects/makedumpfile/
-  http://lists.infradead.org/pipermail/kexec/
-  https://lists.linux-foundation.org/pipermail/fastboot/
+  - The makedumpfile project page
+    https://github.com/makedumpfile/makedumpfile
+
+  - The kexec mailing list archives
+    http://lists.infradead.org/pipermail/kexec/
+  - The fastboot mailing list archives
+    https://lists.linux-foundation.org/pipermail/fastboot/
 
 * BUG REPORT
   If finding some bugs, please send the information to the following:
   Kazuhito Hagio <k-hagio-ab@nec.com>
   kexec-ml <kexec@lists.infradead.org>
+
+  Please refer to the project page's wiki:
+  https://github.com/makedumpfile/makedumpfile/wiki
 

@@ -15,13 +15,13 @@ case "$1" in
 	             sed -i "s/ crashkernel=.*M//" /etc/zipl.conf
 		     zipl
 	       fi
-	       if [ -x /usr/sbin/update-grub ] && [ -e /boot/grub/grub.cfg ]; then
+	       if command -v update-grub > /dev/null && [ -e /boot/grub/grub.cfg ]; then
 		       update-grub
 	       fi
 	       ;;
        purge)
 		rm -rf /var/lib/kdump
-		if which ucf > /dev/null 2>&1; then
+		if command -v ucf > /dev/null 2>&1; then
 			ucf --purge /etc/default/kdump-tools
 			ucfr -p kdump-tools /etc/default/kdump-tools
 		fi

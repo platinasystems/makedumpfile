@@ -13,6 +13,7 @@
 # overriding. We chose to kept the innocuous OPTION here to better
 # code sync with Ubuntu.
 
+# shellcheck disable=SC2034
 OPTION=KDUMP
 
 set +e
@@ -38,11 +39,10 @@ if [ ! -d /run ]; then
 	exit 0
 fi
 
-RT="${rootmnt}"
+RT="${rootmnt?}"
 SYSD="sysctl.d/"
-SYSCTL_PATHS="${RT}/usr/lib/${SYSD} ${RT}/usr/local/lib/${SYSD} ${RT}/lib/${SYSD} ${RT}/etc/${SYSD} ${RT}/run/${SYSD}"
-
-FNAME="$(ls -1 ${SYSCTL_PATHS} 2>/dev/null | grep "\.conf$" | LC_ALL=C sort | tail -n1)"
+FNAME="$(find "${RT}/usr/lib/${SYSD}" "${RT}/usr/local/lib/${SYSD}" "${RT}/lib/${SYSD}" "${RT}/etc/${SYSD}" "${RT}/run/${SYSD}" \
+	-maxdepth=1 -name '*.conf' -printf '%f\n' 2>/dev/null | LC_ALL=C sort | tail -n1)"
 FNAME="${FNAME}-kdump.conf"
 
 if [ ! -f ${KDUMP_SYSCTL_PATH} ]; then
@@ -51,4 +51,4 @@ if [ ! -f ${KDUMP_SYSCTL_PATH} ]; then
 fi
 
 mkdir -p /run/sysctl.d
-cp -p ${KDUMP_SYSCTL_PATH} /run/sysctl.d/${FNAME}
+cp -p ${KDUMP_SYSCTL_PATH} "/run/sysctl.d/${FNAME}"

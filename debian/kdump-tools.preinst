@@ -18,7 +18,7 @@ case "$1" in
     install|upgrade)
 	# If in place, undo the symlink transition introduced in 1:1.5.9-6
 	oldversion="$2"
-	if [ -n "$oldversion" ] && dpkg --compare-versions $oldversion lt 1:1.6.1-2~; then
+	if [ -n "$oldversion" ] && dpkg --compare-versions "$oldversion" lt 1:1.6.1-2~; then
 	    cfglink="/etc/default/grub.d/kdump-tools.cfg"
 	    cfgtarget="/etc/default/grub.d/kdump-tools.default"
 	    if [ -h "$cfglink" ] && [ "$(readlink $cfglink)" = "$cfgtarget" ]; then

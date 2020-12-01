@@ -1,3 +1,23 @@
+makedumpfile (1:1.6.8-1) unstable; urgency=medium
+
+  [ Benjamin Drung ]
+  * Add Homepage field pointing to GitHub page
+  * kdump-tools.default: Remove trailing spaces, replace tabs by spaces, and
+    remove duplicate settings (Closes: #856935)
+  * Fix cleanup if mkinitramfs fails on kernel update
+  * Fix all shellcheck issues in Shell scripts
+  * Run shellcheck on package build and autopkgtest
+  * Add support for FTP uploads (Closes: #856957)
+  * Replace bsdmainutils by bsdextrautils (Closes: #964516)
+  * Use POSIX shell instead of bash
+  * Bump Standards-Version to 4.5.1
+
+  [ dann frazier ]
+  * Support dumping kernel via both SSH and NFS
+  * Update to new upstream version 1.6.8.
+
+ -- dann frazier <dannf@debian.org>  Tue, 01 Dec 2020 08:34:43 -0700
+
 makedumpfile (1:1.6.7-4) unstable; urgency=medium
 
   [ Guilherme G. Piccoli ]
