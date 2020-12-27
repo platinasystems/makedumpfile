@@ -1,3 +1,10 @@
+makedumpfile (1:1.6.8-2) unstable; urgency=medium
+
+  * systemd: Use journal for StandardOutput instead of syslog, which
+    is deprecated. Thanks to Bryan Quigley. (Closes: #969013)
+
+ -- dann frazier <dannf@debian.org>  Sun, 27 Dec 2020 08:44:02 -0700
+
 makedumpfile (1:1.6.8-1) unstable; urgency=medium
 
   [ Benjamin Drung ]
