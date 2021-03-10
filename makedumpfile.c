@@ -88,6 +88,7 @@ mdf_pfn_t pfn_cache_private;
 mdf_pfn_t pfn_user;
 mdf_pfn_t pfn_free;
 mdf_pfn_t pfn_hwpoison;
+mdf_pfn_t pfn_offline;
 
 mdf_pfn_t num_dumped;
 
@@ -247,6 +248,21 @@ isHugetlb(unsigned long dtor)
 		&& (NUMBER(HUGETLB_PAGE_DTOR) == dtor))
                 || ((SYMBOL(free_huge_page) != NOT_FOUND_SYMBOL)
                     && (SYMBOL(free_huge_page) == dtor));
+}
+
+static int
+isOffline(unsigned long flags, unsigned int _mapcount)
+{
+	if (NUMBER(PAGE_OFFLINE_MAPCOUNT_VALUE) == NOT_FOUND_NUMBER)
+		return FALSE;
+
+	if (flags & (1UL << NUMBER(PG_slab)))
+		return FALSE;
+
+	if (_mapcount == (int)NUMBER(PAGE_OFFLINE_MAPCOUNT_VALUE))
+		return TRUE;
+
+	return FALSE;
 }
 
 static int
@@ -977,6 +993,8 @@ next_page:
 	read_size = MIN(info->page_size - PAGEOFFSET(paddr), size);
 
 	pgaddr = PAGEBASE(paddr);
+	if (NUMBER(sme_mask) != NOT_FOUND_NUMBER)
+		pgaddr = pgaddr & ~(NUMBER(sme_mask));
 	pgbuf = cache_search(pgaddr, read_size);
 	if (!pgbuf) {
 		++cache_miss;
@@ -2276,6 +2294,7 @@ write_vmcoreinfo_data(void)
 	WRITE_NUMBER("NR_FREE_PAGES", NR_FREE_PAGES);
 	WRITE_NUMBER("N_ONLINE", N_ONLINE);
 	WRITE_NUMBER("pgtable_l5_enabled", pgtable_l5_enabled);
+	WRITE_NUMBER("sme_mask", sme_mask);
 
 	WRITE_NUMBER("PG_lru", PG_lru);
 	WRITE_NUMBER("PG_private", PG_private);
@@ -2287,7 +2306,10 @@ write_vmcoreinfo_data(void)
 	WRITE_NUMBER("PG_hwpoison", PG_hwpoison);
 
 	WRITE_NUMBER("PAGE_BUDDY_MAPCOUNT_VALUE", PAGE_BUDDY_MAPCOUNT_VALUE);
+	WRITE_NUMBER("PAGE_OFFLINE_MAPCOUNT_VALUE",
+		     PAGE_OFFLINE_MAPCOUNT_VALUE);
 	WRITE_NUMBER("phys_base", phys_base);
+	WRITE_NUMBER("KERNEL_IMAGE_SIZE", KERNEL_IMAGE_SIZE);
 
 	WRITE_NUMBER("HUGETLB_PAGE_DTOR", HUGETLB_PAGE_DTOR);
 #ifdef __aarch64__
@@ -2362,12 +2384,15 @@ read_vmcoreinfo_basic_info(void)
 		return FALSE;
 	}
 
+	DEBUG_MSG("VMCOREINFO   :\n");
 	while (fgets(buf, BUFSIZE_FGETS, info->file_vmcoreinfo)) {
 		i = strlen(buf);
 		if (!i)
 			break;
 		if (buf[i - 1] == '\n')
 			buf[i - 1] = '\0';
+
+		DEBUG_MSG("  %s\n", buf);
 		if (strncmp(buf, STR_OSRELEASE, strlen(STR_OSRELEASE)) == 0) {
 			get_release = TRUE;
 			/* if the release have been stored, skip this time. */
@@ -2411,6 +2436,8 @@ read_vmcoreinfo_basic_info(void)
 		    strlen(STR_CONFIG_PGTABLE_4)) == 0)
 			vt.mem_flags |= MEMORY_PAGETABLE_4L;
 	}
+	DEBUG_MSG("\n");
+
 	if (!get_release || !info->page_size) {
 		ERRMSG("Invalid format in %s", info->name_vmcoreinfo);
 		return FALSE;
@@ -2672,6 +2699,7 @@ read_vmcoreinfo(void)
 	READ_NUMBER("NR_FREE_PAGES", NR_FREE_PAGES);
 	READ_NUMBER("N_ONLINE", N_ONLINE);
 	READ_NUMBER("pgtable_l5_enabled", pgtable_l5_enabled);
+	READ_NUMBER("sme_mask", sme_mask);
 
 	READ_NUMBER("PG_lru", PG_lru);
 	READ_NUMBER("PG_private", PG_private);
@@ -2687,7 +2715,9 @@ read_vmcoreinfo(void)
 	READ_SRCFILE("pud_t", pud_t);
 
 	READ_NUMBER("PAGE_BUDDY_MAPCOUNT_VALUE", PAGE_BUDDY_MAPCOUNT_VALUE);
+	READ_NUMBER("PAGE_OFFLINE_MAPCOUNT_VALUE", PAGE_OFFLINE_MAPCOUNT_VALUE);
 	READ_NUMBER("phys_base", phys_base);
+	READ_NUMBER("KERNEL_IMAGE_SIZE", KERNEL_IMAGE_SIZE);
 #ifdef __aarch64__
 	READ_NUMBER("VA_BITS", VA_BITS);
 	READ_NUMBER_UNSIGNED("PHYS_OFFSET", PHYS_OFFSET);
@@ -2836,9 +2866,7 @@ get_numnodes(void)
 	if (!(vt.numnodes = get_nodes_online())) {
 		vt.numnodes = 1;
 	}
-	DEBUG_MSG("\n");
 	DEBUG_MSG("num of NODEs : %d\n", vt.numnodes);
-	DEBUG_MSG("\n");
 
 	return TRUE;
 }
@@ -2968,10 +2996,12 @@ dump_mem_map(mdf_pfn_t pfn_start, mdf_pfn_t pfn_end,
 	mmd->pfn_end   = pfn_end;
 	mmd->mem_map   = mem_map;
 
-	DEBUG_MSG("mem_map (%d)\n", num_mm);
-	DEBUG_MSG("  mem_map    : %lx\n", mem_map);
-	DEBUG_MSG("  pfn_start  : %llx\n", pfn_start);
-	DEBUG_MSG("  pfn_end    : %llx\n", pfn_end);
+	if (num_mm == 0)
+		DEBUG_MSG("%13s %16s %16s %16s\n",
+			"", "mem_map", "pfn_start", "pfn_end");
+
+	DEBUG_MSG("mem_map[%4d] %16lx %16llx %16llx\n",
+		num_mm, mem_map, pfn_start, pfn_end);
 
 	return;
 }
@@ -3561,27 +3591,19 @@ get_mem_map(void)
 
 	switch (get_mem_type()) {
 	case SPARSEMEM:
-		DEBUG_MSG("\n");
-		DEBUG_MSG("Memory type  : SPARSEMEM\n");
-		DEBUG_MSG("\n");
+		DEBUG_MSG("Memory type  : SPARSEMEM\n\n");
 		ret = get_mm_sparsemem();
 		break;
 	case SPARSEMEM_EX:
-		DEBUG_MSG("\n");
-		DEBUG_MSG("Memory type  : SPARSEMEM_EX\n");
-		DEBUG_MSG("\n");
+		DEBUG_MSG("Memory type  : SPARSEMEM_EX\n\n");
 		ret = get_mm_sparsemem();
 		break;
 	case DISCONTIGMEM:
-		DEBUG_MSG("\n");
-		DEBUG_MSG("Memory type  : DISCONTIGMEM\n");
-		DEBUG_MSG("\n");
+		DEBUG_MSG("Memory type  : DISCONTIGMEM\n\n");
 		ret = get_mm_discontigmem();
 		break;
 	case FLATMEM:
-		DEBUG_MSG("\n");
-		DEBUG_MSG("Memory type  : FLATMEM\n");
-		DEBUG_MSG("\n");
+		DEBUG_MSG("Memory type  : FLATMEM\n\n");
 		ret = get_mm_flatmem();
 		break;
 	default:
@@ -6042,6 +6064,12 @@ __exclude_unnecessary_pages(unsigned long mem_map,
 			pfn_counter = &pfn_hwpoison;
 		}
 		/*
+		 * Exclude pages that are logically offline.
+		 */
+		else if (isOffline(flags, _mapcount)) {
+			pfn_counter = &pfn_offline;
+		}
+		/*
 		 * Unexcludable page
 		 */
 		else
@@ -7522,7 +7550,7 @@ write_elf_pages_cyclic(struct cache_data *cd_header, struct cache_data *cd_page)
 	 */
 	if (info->flag_cyclic) {
 		pfn_zero = pfn_cache = pfn_cache_private = 0;
-		pfn_user = pfn_free = pfn_hwpoison = 0;
+		pfn_user = pfn_free = pfn_hwpoison = pfn_offline = 0;
 		pfn_memhole = info->max_mapnr;
 	}
 
@@ -8804,7 +8832,7 @@ write_kdump_pages_and_bitmap_cyclic(struct cache_data *cd_header, struct cache_d
 		 * Reset counter for debug message.
 		 */
 		pfn_zero = pfn_cache = pfn_cache_private = 0;
-		pfn_user = pfn_free = pfn_hwpoison = 0;
+		pfn_user = pfn_free = pfn_hwpoison = pfn_offline = 0;
 		pfn_memhole = info->max_mapnr;
 
 		/*
@@ -9749,7 +9777,7 @@ print_report(void)
 	pfn_original = info->max_mapnr - pfn_memhole;
 
 	pfn_excluded = pfn_zero + pfn_cache + pfn_cache_private
-	    + pfn_user + pfn_free + pfn_hwpoison;
+	    + pfn_user + pfn_free + pfn_hwpoison + pfn_offline;
 	shrinking = (pfn_original - pfn_excluded) * 100;
 	shrinking = shrinking / pfn_original;
 
@@ -9763,6 +9791,7 @@ print_report(void)
 	REPORT_MSG("    User process data pages : 0x%016llx\n", pfn_user);
 	REPORT_MSG("    Free pages              : 0x%016llx\n", pfn_free);
 	REPORT_MSG("    Hwpoison pages          : 0x%016llx\n", pfn_hwpoison);
+	REPORT_MSG("    Offline pages           : 0x%016llx\n", pfn_offline);
 	REPORT_MSG("  Remaining pages  : 0x%016llx\n",
 	    pfn_original - pfn_excluded);
 	REPORT_MSG("  (The number of pages is reduced to %lld%%.)\n",
@@ -9790,7 +9819,7 @@ print_mem_usage(void)
 	pfn_original = info->max_mapnr - pfn_memhole;
 
 	pfn_excluded = pfn_zero + pfn_cache + pfn_cache_private
-	    + pfn_user + pfn_free + pfn_hwpoison;
+	    + pfn_user + pfn_free + pfn_hwpoison + pfn_offline;
 	shrinking = (pfn_original - pfn_excluded) * 100;
 	shrinking = shrinking / pfn_original;
 	total_size = info->page_size * pfn_original;
