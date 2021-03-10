@@ -494,8 +494,8 @@ do { \
 #define KVER_MAJ_SHIFT 24
 #define KVER_MIN_SHIFT 16
 #define KERNEL_VERSION(x,y,z) (((x) << KVER_MAJ_SHIFT) | ((y) << KVER_MIN_SHIFT) | (z))
-#define OLDEST_VERSION		KERNEL_VERSION(2, 6, 15)/* linux-2.6.15 */
-#define LATEST_VERSION		KERNEL_VERSION(4, 17, 0)/* linux-4.17.0 */
+#define OLDEST_VERSION		KERNEL_VERSION(2, 6, 15) /* linux-2.6.15 */
+#define LATEST_VERSION		KERNEL_VERSION(4, 19, 4) /* linux-4.19.4 */
 
 /*
  * vmcoreinfo in /proc/vmcore
@@ -542,6 +542,8 @@ do { \
 #ifdef __aarch64__
 unsigned long get_kvbase_arm64(void);
 #define KVBASE			get_kvbase_arm64()
+#define __START_KERNEL_map	(0xffffffff80000000UL)
+
 #endif /* aarch64 */
 
 #ifdef __arm__
@@ -669,6 +671,7 @@ unsigned long get_kvbase_arm64(void);
 #define _SECTION_SIZE_BITS	(24)
 #define _MAX_PHYSMEM_BITS_ORIG  (44)
 #define _MAX_PHYSMEM_BITS_3_7   (46)
+#define _MAX_PHYSMEM_BITS_4_19  (47)
 #define REGION_SHIFT            (60UL)
 #define VMEMMAP_REGION_ID       (0xfUL)
 
@@ -960,6 +963,8 @@ typedef unsigned long pgd_t;
 static inline int stub_true() { return TRUE; }
 static inline int stub_true_ul(unsigned long x) { return TRUE; }
 static inline int stub_false() { return FALSE; }
+#define paddr_to_vaddr_general(X) ((X) + PAGE_OFFSET)
+
 #ifdef __aarch64__
 int get_phys_base_arm64(void);
 int get_machdep_info_arm64(void);
@@ -967,12 +972,16 @@ unsigned long long vaddr_to_paddr_arm64(unsigned long vaddr);
 int get_versiondep_info_arm64(void);
 int get_xen_basic_info_arm64(void);
 int get_xen_info_arm64(void);
+unsigned long get_kaslr_offset_arm64(unsigned long vaddr);
+#define paddr_to_vaddr_arm64(X) (((X) - info->phys_base) | PAGE_OFFSET)
+
 #define find_vmemmap()		stub_false()
 #define vaddr_to_paddr(X)	vaddr_to_paddr_arm64(X)
+#define paddr_to_vaddr(X)	paddr_to_vaddr_arm64(X)
 #define get_phys_base()		get_phys_base_arm64()
 #define get_machdep_info()	get_machdep_info_arm64()
 #define get_versiondep_info()	get_versiondep_info_arm64()
-#define get_kaslr_offset(X)	stub_false()
+#define get_kaslr_offset(X)	get_kaslr_offset_arm64(X)
 #define get_xen_basic_info_arch(X) get_xen_basic_info_arm64(X)
 #define get_xen_info_arch(X) get_xen_info_arm64(X)
 #define is_phys_addr(X)		stub_true_ul(X)
@@ -989,6 +998,7 @@ unsigned long long vaddr_to_paddr_arm(unsigned long vaddr);
 #define get_versiondep_info()	stub_true()
 #define get_kaslr_offset(X)	stub_false()
 #define vaddr_to_paddr(X)	vaddr_to_paddr_arm(X)
+#define paddr_to_vaddr(X)	paddr_to_vaddr_general(X)
 #define is_phys_addr(X)		stub_true_ul(X)
 #define arch_crashkernel_mem_size()	stub_false()
 #endif /* arm */
@@ -1003,6 +1013,7 @@ unsigned long long vaddr_to_paddr_x86(unsigned long vaddr);
 #define get_versiondep_info()	get_versiondep_info_x86()
 #define get_kaslr_offset(X)	stub_false()
 #define vaddr_to_paddr(X)	vaddr_to_paddr_x86(X)
+#define paddr_to_vaddr(X)	paddr_to_vaddr_general(X)
 #define is_phys_addr(X)		stub_true_ul(X)
 #define arch_crashkernel_mem_size()	stub_false()
 #endif /* x86 */
@@ -1020,6 +1031,7 @@ unsigned long long vtop4_x86_64_pagetable(unsigned long vaddr, unsigned long pag
 #define get_versiondep_info()	get_versiondep_info_x86_64()
 #define get_kaslr_offset(X)	get_kaslr_offset_x86_64(X)
 #define vaddr_to_paddr(X)	vtop4_x86_64(X)
+#define paddr_to_vaddr(X)	paddr_to_vaddr_general(X)
 #define is_phys_addr(X)		stub_true_ul(X)
 #define arch_crashkernel_mem_size()	stub_false()
 #endif /* x86_64 */
@@ -1035,6 +1047,7 @@ int arch_crashkernel_mem_size_ppc64(void);
 #define get_versiondep_info()	get_versiondep_info_ppc64()
 #define get_kaslr_offset(X)	stub_false()
 #define vaddr_to_paddr(X)	vaddr_to_paddr_ppc64(X)
+#define paddr_to_vaddr(X)	paddr_to_vaddr_general(X)
 #define is_phys_addr(X)		stub_true_ul(X)
 #define arch_crashkernel_mem_size()	arch_crashkernel_mem_size_ppc64()
 #endif          /* powerpc64 */
@@ -1048,6 +1061,7 @@ unsigned long long vaddr_to_paddr_ppc(unsigned long vaddr);
 #define get_versiondep_info()	stub_true()
 #define get_kaslr_offset(X)	stub_false()
 #define vaddr_to_paddr(X)	vaddr_to_paddr_ppc(X)
+#define paddr_to_vaddr(X)	paddr_to_vaddr_general(X)
 #define is_phys_addr(X)		stub_true_ul(X)
 #define arch_crashkernel_mem_size()	stub_false()
 #endif          /* powerpc32 */
@@ -1062,6 +1076,7 @@ int is_iomem_phys_addr_s390x(unsigned long addr);
 #define get_versiondep_info()	stub_true()
 #define get_kaslr_offset(X)	stub_false()
 #define vaddr_to_paddr(X)	vaddr_to_paddr_s390x(X)
+#define paddr_to_vaddr(X)	paddr_to_vaddr_general(X)
 #define is_phys_addr(X)		is_iomem_phys_addr_s390x(X)
 #define arch_crashkernel_mem_size()	stub_false()
 #endif          /* s390x */
@@ -1076,6 +1091,7 @@ unsigned long long vaddr_to_paddr_ia64(unsigned long vaddr);
 #define get_versiondep_info()	stub_true()
 #define get_kaslr_offset(X)	stub_false()
 #define vaddr_to_paddr(X)	vaddr_to_paddr_ia64(X)
+#define paddr_to_vaddr(X)	paddr_to_vaddr_general(X)
 #define VADDR_REGION(X)		(((unsigned long)(X)) >> REGION_SHIFT)
 #define is_phys_addr(X)		stub_true_ul(X)
 #define arch_crashkernel_mem_size()	stub_false()
@@ -1090,6 +1106,7 @@ unsigned long long vaddr_to_paddr_sparc64(unsigned long vaddr);
 #define get_phys_base()         get_phys_base_sparc64()
 #define get_versiondep_info()   get_versiondep_info_sparc64()
 #define vaddr_to_paddr(X)       vaddr_to_paddr_sparc64(X)
+#define paddr_to_vaddr(X)	paddr_to_vaddr_general(X)
 #define is_phys_addr(X)		stub_true_ul(X)
 #define arch_crashkernel_mem_size()	stub_false()
 #endif		/* sparc64 */
