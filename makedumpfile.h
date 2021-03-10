@@ -155,6 +155,7 @@ test_bit(int nr, unsigned long addr)
 #define isPrivate(flags)	test_bit(NUMBER(PG_private), flags)
 #define isCompoundHead(flags)   (!!((flags) & NUMBER(PG_head_mask)))
 #define isSwapCache(flags)	test_bit(NUMBER(PG_swapcache), flags)
+#define isSwapBacked(flags)	test_bit(NUMBER(PG_swapbacked), flags)
 #define isHWPOISON(flags)	(test_bit(NUMBER(PG_hwpoison), flags) \
 				&& (NUMBER(PG_hwpoison) != NOT_FOUND_NUMBER))
 
@@ -184,9 +185,17 @@ isAnon(unsigned long mapping)
 #define SECTIONS_PER_ROOT()	(info->sections_per_root)
 #define SECTION_ROOT_MASK()	(SECTIONS_PER_ROOT() - 1)
 #define SECTION_NR_TO_ROOT(sec)	((sec) / SECTIONS_PER_ROOT())
+#define SECTION_MARKED_PRESENT  (1UL<<0)
 #define SECTION_IS_ONLINE	(1UL<<2)
+/*
+ * SECTION_MAP_LAST_BIT was 1UL<<2 before Linux 4.13.0.
+ * However, we always use the higher value, because:
+ *  1. at least one distributor backported commit 2d070eab2e82 to kernel
+ *     version 4.12,
+ *  2. it has been verified that (1UL<<2) was never set, so it is
+ *     safe to mask that bit off even in old kernels.
+ */
 #define SECTION_MAP_LAST_BIT	(1UL<<3)
-#define SECTION_MAP_MASK_4_12	(~(SECTION_IS_ONLINE-1))
 #define SECTION_MAP_MASK	(~(SECTION_MAP_LAST_BIT-1))
 #define NR_SECTION_ROOTS()	divideup(num_section, SECTIONS_PER_ROOT())
 #define SECTION_NR_TO_PFN(sec)	((sec) << PFN_SECTION_SHIFT())
@@ -237,10 +246,14 @@ isAnon(unsigned long mapping)
 #define MIN_ELF_HEADER_SIZE \
 	MAX(MIN_ELF32_HEADER_SIZE, MIN_ELF64_HEADER_SIZE)
 static inline int string_exists(char *s) { return (s ? TRUE : FALSE); }
+#define STREQ(A, B) (string_exists((char *)A) && 	\
+		     string_exists((char *)B) && 	\
+	(strcmp((char *)(A), (char *)(B)) == 0))
 #define STRNEQ(A, B)(string_exists((char *)(A)) &&	\
 		     string_exists((char *)(B)) &&	\
 	(strncmp((char *)(A), (char *)(B), strlen((char *)(B))) == 0))
 
+#define UCHAR(ADDR)	*((unsigned char *)(ADDR))
 #define USHORT(ADDR)	*((unsigned short *)(ADDR))
 #define UINT(ADDR)	*((unsigned int *)(ADDR))
 #define ULONG(ADDR)	*((unsigned long *)(ADDR))
@@ -277,6 +290,10 @@ do { \
 		SYMBOL(symbol) = read_vmcoreinfo_symbol(STR_SYMBOL(str_symbol)); \
 		if (SYMBOL(symbol) == INVALID_SYMBOL_DATA) \
 			return FALSE; \
+		if (info->read_text_vmcoreinfo && \
+		    (SYMBOL(symbol) != NOT_FOUND_SYMBOL) && \
+		    (SYMBOL(symbol) != INVALID_SYMBOL_DATA)) \
+			SYMBOL(symbol) += info->kaslr_offset; \
 	} \
 } while (0)
 
@@ -478,7 +495,7 @@ do { \
 #define KVER_MIN_SHIFT 16
 #define KERNEL_VERSION(x,y,z) (((x) << KVER_MAJ_SHIFT) | ((y) << KVER_MIN_SHIFT) | (z))
 #define OLDEST_VERSION		KERNEL_VERSION(2, 6, 15)/* linux-2.6.15 */
-#define LATEST_VERSION		KERNEL_VERSION(4, 14, 8)/* linux-4.14.8 */
+#define LATEST_VERSION		KERNEL_VERSION(4, 17, 0)/* linux-4.17.0 */
 
 /*
  * vmcoreinfo in /proc/vmcore
@@ -581,16 +598,21 @@ unsigned long get_kvbase_arm64(void);
 #ifdef __x86_64__
 #define __PAGE_OFFSET_ORIG	(0xffff810000000000) /* 2.6.26, or former */
 #define __PAGE_OFFSET_2_6_27	(0xffff880000000000) /* 2.6.27, or later  */
+#define __PAGE_OFFSET_5LEVEL	(0xff10000000000000) /* 5-level page table */
 
 #define VMALLOC_START_ORIG	(0xffffc20000000000) /* 2.6.30, or former */
 #define VMALLOC_START_2_6_31	(0xffffc90000000000) /* 2.6.31, or later  */
+#define VMALLOC_START_5LEVEL	(0xffa0000000000000) /* 5-level page table */
 #define VMALLOC_END_ORIG	(0xffffe1ffffffffff) /* 2.6.30, or former */
 #define VMALLOC_END_2_6_31	(0xffffe8ffffffffff) /* 2.6.31, or later  */
+#define VMALLOC_END_5LEVEL	(0xffd1ffffffffffff) /* 5-level page table */
 
 #define VMEMMAP_START_ORIG	(0xffffe20000000000) /* 2.6.30, or former */
 #define VMEMMAP_START_2_6_31	(0xffffea0000000000) /* 2.6.31, or later  */
+#define VMEMMAP_START_5LEVEL	(0xffd4000000000000) /* 5-level page table */
 #define VMEMMAP_END_ORIG	(0xffffe2ffffffffff) /* 2.6.30, or former */
 #define VMEMMAP_END_2_6_31	(0xffffeaffffffffff) /* 2.6.31, or later  */
+#define VMEMMAP_END_5LEVEL	(0xffd5ffffffffffff) /* 5-level page table */
 
 #define __START_KERNEL_map	(0xffffffff80000000)
 #define KVBASE			PAGE_OFFSET
@@ -598,29 +620,38 @@ unsigned long get_kvbase_arm64(void);
 #define _MAX_PHYSMEM_BITS_ORIG		(40)
 #define _MAX_PHYSMEM_BITS_2_6_26	(44)
 #define _MAX_PHYSMEM_BITS_2_6_31	(46)
+#define _MAX_PHYSMEM_BITS_5LEVEL	(52)
 
 /*
  * 4 Levels paging
  */
-#define PML4_SHIFT		(39)
-#define PTRS_PER_PML4		(512)
-#define PGDIR_SHIFT		(30)
-#define PGDIR_SIZE		(1UL << PGDIR_SHIFT)
-#define PGDIR_MASK		(~(PGDIR_SIZE - 1))
-#define PTRS_PER_PGD		(512)
 #define PGD_SHIFT		(39)
 #define PUD_SHIFT		(30)
 #define PMD_SHIFT		(21)
-#define PMD_SIZE		(1UL << PMD_SHIFT)
-#define PMD_MASK		(~(PMD_SIZE - 1))
+#define PTE_SHIFT		(12)
+
+#define PTRS_PER_PGD		(512)
 #define PTRS_PER_PUD		(512)
 #define PTRS_PER_PMD		(512)
 #define PTRS_PER_PTE		(512)
-#define PTE_SHIFT		(12)
 
-#define pml4_index(address) (((address) >> PML4_SHIFT) & (PTRS_PER_PML4 - 1))
-#define pgd_index(address)  (((address) >> PGDIR_SHIFT) & (PTRS_PER_PGD - 1))
-#define pgd4_index(address) (((address) >> PGD_SHIFT) & (PTRS_PER_PGD - 1))
+#define PUD_SIZE		(1UL << PUD_SHIFT)
+#define PUD_MASK		(~(PUD_SIZE - 1))
+#define PMD_SIZE		(1UL << PMD_SHIFT)
+#define PMD_MASK		(~(PMD_SIZE - 1))
+
+/*
+ * 5 Levels paging
+ */
+#define PGD_SHIFT_5LEVEL	(48)
+#define P4D_SHIFT		(39)
+
+#define PTRS_PER_PGD_5LEVEL	(512)
+#define PTRS_PER_P4D		(512)
+
+#define pgd5_index(address)  (((address) >> PGD_SHIFT_5LEVEL) & (PTRS_PER_PGD_5LEVEL - 1))
+#define pgd_index(address)  (((address) >> PGD_SHIFT) & (PTRS_PER_PGD - 1))
+#define p4d_index(address)  (((address) >> P4D_SHIFT) & (PTRS_PER_P4D - 1))
 #define pud_index(address)  (((address) >> PUD_SHIFT) & (PTRS_PER_PUD - 1))
 #define pmd_index(address)  (((address) >> PMD_SHIFT) & (PTRS_PER_PMD - 1))
 #define pte_index(address)  (((address) >> PTE_SHIFT) & (PTRS_PER_PTE - 1))
@@ -672,6 +703,7 @@ unsigned long get_kvbase_arm64(void);
 #define PMD_INDEX_SIZE_L4_64K_4_12 10
 #define PUD_INDEX_SIZE_L4_64K_4_12 7
 #define PGD_INDEX_SIZE_L4_64K_4_12 8
+#define PUD_INDEX_SIZE_L4_64K_4_17 10
 #define PTE_INDEX_SIZE_RADIX_64K  5
 #define PMD_INDEX_SIZE_RADIX_64K  9
 #define PUD_INDEX_SIZE_RADIX_64K  9
@@ -1387,6 +1419,7 @@ struct DumpInfo {
 	FILE			*file_vmcoreinfo;
 	char			*name_vmcoreinfo;	     /* vmcoreinfo file */
 	char			release[STRLEN_OSRELEASE];
+	int			read_text_vmcoreinfo;
 
 	/*
 	 * ELF NOTE section in dump memory image info:
@@ -1607,6 +1640,8 @@ struct symbol_table {
 	unsigned long long	divide_error;
 	unsigned long long	idt_table;
 	unsigned long long	saved_command_line;
+	unsigned long long	pti_init;
+	unsigned long long	kaiser_init;
 
 	/*
 	 * symbols on ppc64 arch
@@ -1859,6 +1894,7 @@ struct array_table {
 struct number_table {
 	long	NR_FREE_PAGES;
 	long	N_ONLINE;
+	long	pgtable_l5_enabled;
 
 	/*
  	* Page flags
@@ -1868,6 +1904,7 @@ struct number_table {
 	long	PG_head;
 	long	PG_head_mask;
 	long	PG_swapcache;
+	long	PG_swapbacked;
 	long	PG_buddy;
 	long	PG_slab;
 	long    PG_hwpoison;
@@ -2318,5 +2355,16 @@ int calculate_cyclic_buffer_size(void);
 int prepare_splitblock_table(void);
 int initialize_zlib(z_stream *stream, int level);
 int finalize_zlib(z_stream *stream);
+
+int parse_line(char *str, char *argv[]);
+char *shift_string_left(char *s, int cnt);
+char *clean_line(char *line);
+char *strip_linefeeds(char *line);
+char *strip_beginning_whitespace(char *line);
+char *strip_ending_whitespace(char *line);
+ulong htol(char *s, int flags);
+int hexadecimal(char *s, int count);
+int decimal(char *s, int count);
+int file_exists(char *file);
 
 #endif /* MAKEDUMPFILE_H */

@@ -241,12 +241,29 @@ is_in_same_page(unsigned long vaddr1, unsigned long vaddr2)
 }
 
 static inline int
-isHugetlb(int dtor)
+isHugetlb(unsigned long dtor)
 {
         return ((NUMBER(HUGETLB_PAGE_DTOR) != NOT_FOUND_NUMBER)
 		&& (NUMBER(HUGETLB_PAGE_DTOR) == dtor))
                 || ((SYMBOL(free_huge_page) != NOT_FOUND_SYMBOL)
                     && (SYMBOL(free_huge_page) == dtor));
+}
+
+static int
+is_cache_page(unsigned long flags)
+{
+	if (isLRU(flags))
+		return TRUE;
+
+	/* PG_swapcache is valid only if:
+	 *   a. PG_swapbacked bit is set, or
+	 *   b. PG_swapbacked did not exist (kernels before 4.10-rc1).
+	 */
+	if ((NUMBER(PG_swapbacked) == NOT_FOUND_NUMBER || isSwapBacked(flags))
+	    && isSwapCache(flags))
+		return TRUE;
+
+	return FALSE;
 }
 
 static inline unsigned long
@@ -1572,6 +1589,8 @@ get_symbol_info(void)
 	SYMBOL_INIT(divide_error, "divide_error");
 	SYMBOL_INIT(idt_table, "idt_table");
 	SYMBOL_INIT(saved_command_line, "saved_command_line");
+	SYMBOL_INIT(pti_init, "pti_init");
+	SYMBOL_INIT(kaiser_init, "kaiser_init");
 
 	return TRUE;
 }
@@ -1723,10 +1742,12 @@ get_structure_info(void)
 
 	ENUM_NUMBER_INIT(NR_FREE_PAGES, "NR_FREE_PAGES");
 	ENUM_NUMBER_INIT(N_ONLINE, "N_ONLINE");
+	ENUM_NUMBER_INIT(pgtable_l5_enabled, "pgtable_l5_enabled");
 
 	ENUM_NUMBER_INIT(PG_lru, "PG_lru");
 	ENUM_NUMBER_INIT(PG_private, "PG_private");
 	ENUM_NUMBER_INIT(PG_swapcache, "PG_swapcache");
+	ENUM_NUMBER_INIT(PG_swapbacked, "PG_swapbacked");
 	ENUM_NUMBER_INIT(PG_buddy, "PG_buddy");
 	ENUM_NUMBER_INIT(PG_slab, "PG_slab");
 	ENUM_NUMBER_INIT(PG_hwpoison, "PG_hwpoison");
@@ -1980,6 +2001,9 @@ get_value_for_old_linux(void)
 		NUMBER(PG_private) = PG_private_ORIGINAL;
 	if (NUMBER(PG_swapcache) == NOT_FOUND_NUMBER)
 		NUMBER(PG_swapcache) = PG_swapcache_ORIGINAL;
+	if (NUMBER(PG_swapbacked) == NOT_FOUND_NUMBER
+	    && NUMBER(PG_swapcache) < NUMBER(PG_private))
+		NUMBER(PG_swapbacked) = NUMBER(PG_private) + 6;
 	if (NUMBER(PG_slab) == NOT_FOUND_NUMBER)
 		NUMBER(PG_slab) = PG_slab_ORIGINAL;
 	if (NUMBER(PG_head_mask) == NOT_FOUND_NUMBER)
@@ -2058,8 +2082,9 @@ get_str_osrelease_from_vmlinux(void)
 int
 is_sparsemem_extreme(void)
 {
-	if (ARRAY_LENGTH(mem_section)
+	if ((ARRAY_LENGTH(mem_section)
 	     == divideup(NR_MEM_SECTIONS(), _SECTIONS_PER_ROOT_EXTREME()))
+	    || (ARRAY_LENGTH(mem_section) == NOT_FOUND_SYMBOL))
 		return TRUE;
 	else
 		return FALSE;
@@ -2088,8 +2113,7 @@ get_mem_type(void)
 		ret = DISCONTIGMEM;
 	} else if ((SYMBOL(mem_section) != NOT_FOUND_SYMBOL)
 	    && (SIZE(mem_section) != NOT_FOUND_STRUCTURE)
-	    && (OFFSET(mem_section.section_mem_map) != NOT_FOUND_STRUCTURE)
-	    && (ARRAY_LENGTH(mem_section) != NOT_FOUND_STRUCTURE)) {
+	    && (OFFSET(mem_section.section_mem_map) != NOT_FOUND_STRUCTURE)) {
 		if (is_sparsemem_extreme())
 			ret = SPARSEMEM_EX;
 		else
@@ -2251,11 +2275,13 @@ write_vmcoreinfo_data(void)
 
 	WRITE_NUMBER("NR_FREE_PAGES", NR_FREE_PAGES);
 	WRITE_NUMBER("N_ONLINE", N_ONLINE);
+	WRITE_NUMBER("pgtable_l5_enabled", pgtable_l5_enabled);
 
 	WRITE_NUMBER("PG_lru", PG_lru);
 	WRITE_NUMBER("PG_private", PG_private);
 	WRITE_NUMBER("PG_head_mask", PG_head_mask);
 	WRITE_NUMBER("PG_swapcache", PG_swapcache);
+	WRITE_NUMBER("PG_swapbacked", PG_swapbacked);
 	WRITE_NUMBER("PG_buddy", PG_buddy);
 	WRITE_NUMBER("PG_slab", PG_slab);
 	WRITE_NUMBER("PG_hwpoison", PG_hwpoison);
@@ -2645,11 +2671,13 @@ read_vmcoreinfo(void)
 
 	READ_NUMBER("NR_FREE_PAGES", NR_FREE_PAGES);
 	READ_NUMBER("N_ONLINE", N_ONLINE);
+	READ_NUMBER("pgtable_l5_enabled", pgtable_l5_enabled);
 
 	READ_NUMBER("PG_lru", PG_lru);
 	READ_NUMBER("PG_private", PG_private);
 	READ_NUMBER("PG_head_mask", PG_head_mask);
 	READ_NUMBER("PG_swapcache", PG_swapcache);
+	READ_NUMBER("PG_swapbacked", PG_swapbacked);
 	READ_NUMBER("PG_slab", PG_slab);
 	READ_NUMBER("PG_buddy", PG_buddy);
 	READ_NUMBER("PG_hwpoison", PG_hwpoison);
@@ -3297,7 +3325,7 @@ get_mm_discontigmem(void)
 	return TRUE;
 }
 
-unsigned long
+static unsigned long
 nr_to_section(unsigned long nr, unsigned long *mem_sec)
 {
 	unsigned long addr;
@@ -3311,17 +3339,17 @@ nr_to_section(unsigned long nr, unsigned long *mem_sec)
 		addr = SYMBOL(mem_section) + (nr * SIZE(mem_section));
 	}
 
-	if (!is_kvaddr(addr))
-		return NOT_KV_ADDR;
-
 	return addr;
 }
 
-unsigned long
-section_mem_map_addr(unsigned long addr)
+static unsigned long
+section_mem_map_addr(unsigned long addr, unsigned long *map_mask)
 {
 	char *mem_section;
 	unsigned long map;
+	unsigned long mask;
+
+	*map_mask = 0;
 
 	if (!is_kvaddr(addr))
 		return NOT_KV_ADDR;
@@ -3337,16 +3365,17 @@ section_mem_map_addr(unsigned long addr)
 		return NOT_KV_ADDR;
 	}
 	map = ULONG(mem_section + OFFSET(mem_section.section_mem_map));
-	if (info->kernel_version < KERNEL_VERSION(4, 13, 0))
-		map &= SECTION_MAP_MASK_4_12;
-	else
-		map &= SECTION_MAP_MASK;
+	mask = SECTION_MAP_MASK;
+	*map_mask = map & ~mask;
+	if (map == 0x0)
+		*map_mask |= SECTION_MARKED_PRESENT;
+	map &= mask;
 	free(mem_section);
 
 	return map;
 }
 
-unsigned long
+static unsigned long
 sparse_decode_mem_map(unsigned long coded_mem_map, unsigned long section_nr)
 {
 	unsigned long mem_map;
@@ -3354,17 +3383,113 @@ sparse_decode_mem_map(unsigned long coded_mem_map, unsigned long section_nr)
 	mem_map =  coded_mem_map +
 	    (SECTION_NR_TO_PFN(section_nr) * SIZE(page));
 
-	if (!is_kvaddr(mem_map))
-		return NOT_KV_ADDR;
 	return mem_map;
 }
+
+/*
+ * On some kernels, mem_section may be a pointer or an array, when
+ * SPARSEMEM_EXTREME is on.
+ *
+ * We assume that section_mem_map is either 0 or has the present bit set.
+ *
+ */
+
+static int
+validate_mem_section(unsigned long *mem_sec,
+		     unsigned long mem_section_ptr, unsigned int mem_section_size,
+		     unsigned long *mem_maps, unsigned int num_section)
+{
+	unsigned int section_nr;
+	unsigned long map_mask;
+	unsigned long section, mem_map;
+	int ret = FALSE;
+
+	if (!readmem(VADDR, mem_section_ptr, mem_sec, mem_section_size)) {
+		ERRMSG("Can't read mem_section array.\n");
+		return FALSE;
+	}
+	for (section_nr = 0; section_nr < num_section; section_nr++) {
+		section = nr_to_section(section_nr, mem_sec);
+		if (section == NOT_KV_ADDR) {
+			mem_map = NOT_MEMMAP_ADDR;
+		} else {
+			mem_map = section_mem_map_addr(section, &map_mask);
+			if (!(map_mask & SECTION_MARKED_PRESENT)) {
+				return FALSE;
+			}
+			if (mem_map == 0) {
+				mem_map = NOT_MEMMAP_ADDR;
+			} else {
+				mem_map = sparse_decode_mem_map(mem_map,
+								section_nr);
+				if (!is_kvaddr(mem_map)) {
+					return FALSE;
+				}
+				ret = TRUE;
+			}
+		}
+		mem_maps[section_nr] = mem_map;
+	}
+	return ret;
+}
+
+static int
+get_mem_section(unsigned int mem_section_size, unsigned long *mem_maps,
+		unsigned int num_section)
+{
+	unsigned long mem_section_ptr;
+	int ret = FALSE;
+	unsigned long *mem_sec = NULL;
+
+	if ((mem_sec = malloc(mem_section_size)) == NULL) {
+		ERRMSG("Can't allocate memory for the mem_section. %s\n",
+		    strerror(errno));
+		return FALSE;
+	}
+	ret = validate_mem_section(mem_sec, SYMBOL(mem_section),
+				   mem_section_size, mem_maps, num_section);
+
+	if (is_sparsemem_extreme()) {
+		int symbol_valid = ret;
+		int pointer_valid;
+		int mem_maps_size = sizeof(*mem_maps) * num_section;
+		unsigned long *mem_maps_ex = NULL;
+		if (!readmem(VADDR, SYMBOL(mem_section), &mem_section_ptr,
+			     sizeof(mem_section_ptr)))
+			goto out;
+
+		if ((mem_maps_ex = malloc(mem_maps_size)) == NULL) {
+			ERRMSG("Can't allocate memory for the mem_maps. %s\n",
+			    strerror(errno));
+			goto out;
+		}
+
+		pointer_valid = validate_mem_section(mem_sec,
+						     mem_section_ptr,
+						     mem_section_size,
+						     mem_maps_ex,
+						     num_section);
+		if (pointer_valid)
+			memcpy(mem_maps, mem_maps_ex, mem_maps_size);
+		if (mem_maps_ex)
+			free(mem_maps_ex);
+		ret = symbol_valid ^ pointer_valid;
+		if (!ret) {
+			ERRMSG("Could not validate mem_section.\n");
+		}
+	}
+out:
+	if (mem_sec != NULL)
+		free(mem_sec);
+	return ret;
+}
+
 int
 get_mm_sparsemem(void)
 {
 	unsigned int section_nr, mem_section_size, num_section;
 	mdf_pfn_t pfn_start, pfn_end;
-	unsigned long section, mem_map;
-	unsigned long *mem_sec = NULL;
+	unsigned long *mem_maps = NULL;
 
 	int ret = FALSE;
 
@@ -3379,13 +3504,12 @@ get_mm_sparsemem(void)
 		info->sections_per_root = _SECTIONS_PER_ROOT();
 		mem_section_size = SIZE(mem_section) * NR_SECTION_ROOTS();
 	}
-	if ((mem_sec = malloc(mem_section_size)) == NULL) {
-		ERRMSG("Can't allocate memory for the mem_section. %s\n",
-		    strerror(errno));
+	if ((mem_maps = malloc(sizeof(*mem_maps) * num_section)) == NULL) {
+		ERRMSG("Can't allocate memory for the mem_maps. %s\n",
+			strerror(errno));
 		return FALSE;
 	}
-	if (!readmem(VADDR, SYMBOL(mem_section), mem_sec,
-	    mem_section_size)) {
+	if (!get_mem_section(mem_section_size, mem_maps, num_section)) {
 		ERRMSG("Can't get the address of mem_section.\n");
 		goto out;
 	}
@@ -3397,31 +3521,16 @@ get_mm_sparsemem(void)
 		goto out;
 	}
 	for (section_nr = 0; section_nr < num_section; section_nr++) {
-		section = nr_to_section(section_nr, mem_sec);
-		if (section == NOT_KV_ADDR) {
-			mem_map = NOT_MEMMAP_ADDR;
-		} else {
-			mem_map = section_mem_map_addr(section);
-			if (mem_map == 0) {
-				mem_map = NOT_MEMMAP_ADDR;
-			} else {
-				mem_map = sparse_decode_mem_map(mem_map,
-								section_nr);
-				if (!is_kvaddr(mem_map))
-					mem_map = NOT_MEMMAP_ADDR;
-			}
-		}
 		pfn_start = section_nr * PAGES_PER_SECTION();
 		pfn_end   = pfn_start + PAGES_PER_SECTION();
 		if (info->max_mapnr < pfn_end)
 			pfn_end = info->max_mapnr;
-		dump_mem_map(pfn_start, pfn_end, mem_map, section_nr);
+		dump_mem_map(pfn_start, pfn_end, mem_maps[section_nr], section_nr);
 	}
 	ret = TRUE;
 out:
-	if (mem_sec != NULL)
-		free(mem_sec);
-
+	if (mem_maps != NULL)
+		free(mem_maps);
 	return ret;
 }
 
@@ -3886,8 +3995,20 @@ initial(void)
 	 * Get the debug information for analysis from the vmcoreinfo file
 	 */
 	if (info->flag_read_vmcoreinfo) {
+		char *name_vmcoreinfo = info->name_vmcoreinfo;
+		FILE *file_vmcoreinfo = info->file_vmcoreinfo;
+
+		if (has_vmcoreinfo() && !find_kaslr_offsets())
+			return FALSE;
+
+		info->name_vmcoreinfo = name_vmcoreinfo;
+		info->file_vmcoreinfo = file_vmcoreinfo;
+
+		info->read_text_vmcoreinfo = 1;
 		if (!read_vmcoreinfo())
 			return FALSE;
+		info->read_text_vmcoreinfo = 0;
+
 		close_vmcoreinfo();
 		debug_info = TRUE;
 	/*
@@ -5798,18 +5919,35 @@ __exclude_unnecessary_pages(unsigned long mem_map,
 		 * and PGMM_CACHED is a power of 2.
 		 */
 		if ((index_pg < PGMM_CACHED - 1) && isCompoundHead(flags)) {
-			if (order_offset)
-				compound_order = USHORT(pcache + SIZE(page) + order_offset);
+			unsigned char *addr = pcache + SIZE(page);
+
+			if (order_offset) {
+				if (info->kernel_version >=
+				    KERNEL_VERSION(4, 16, 0)) {
+					compound_order =
+						UCHAR(addr + order_offset);
+				} else {
+					compound_order =
+						USHORT(addr + order_offset);
+				}
+			}
 
 			if (dtor_offset) {
 				/*
 				 * compound_dtor has been changed from the address of descriptor
 				 * to the ID of it since linux-4.4.
 				 */
-				if (info->kernel_version >= KERNEL_VERSION(4, 4, 0)) {
-					compound_dtor = USHORT(pcache + SIZE(page) + dtor_offset);
+				if (info->kernel_version >=
+				    KERNEL_VERSION(4, 16, 0)) {
+					compound_dtor =
+						UCHAR(addr + dtor_offset);
+				} else if (info->kernel_version >=
+					   KERNEL_VERSION(4, 4, 0)) {
+					compound_dtor =
+						USHORT(addr + dtor_offset);
 				} else {
-					compound_dtor = ULONG(pcache + SIZE(page) + dtor_offset);
+					compound_dtor =
+						ULONG(addr + dtor_offset);
 				}
 			}
 
@@ -5851,7 +5989,7 @@ __exclude_unnecessary_pages(unsigned long mem_map,
 		 * Exclude the non-private cache page.
 		 */
 		else if ((info->dump_level & DL_EXCLUDE_CACHE)
-		    && (isLRU(flags) || isSwapCache(flags))
+		    && is_cache_page(flags)
 		    && !isPrivate(flags) && !isAnon(mapping)) {
 			pfn_counter = &pfn_cache;
 		}
@@ -5859,7 +5997,7 @@ __exclude_unnecessary_pages(unsigned long mem_map,
 		 * Exclude the cache page whether private or non-private.
 		 */
 		else if ((info->dump_level & DL_EXCLUDE_CACHE_PRI)
-		    && (isLRU(flags) || isSwapCache(flags))
+		    && is_cache_page(flags)
 		    && !isAnon(mapping)) {
 			if (isPrivate(flags))
 				pfn_counter = &pfn_cache_private;
@@ -6194,7 +6332,7 @@ find_unused_vmemmap_pages(void)
 		for (i = 0; i < sz; i++, lp1++, lp2++) {
 			/* for each whole word in the block */
 			/* deal in full 64-page chunks only */
-			if (*lp1 == 0xffffffffffffffffUL) {
+			if (*lp1 == 0xffffffffffffffffULL) {
 				if (*lp2 == 0) {
 					/* we are in a series we want */
 					if (startword == -1) {
@@ -7668,6 +7806,11 @@ int finalize_zlib(z_stream *stream)
 	return err;
 }
 
+static void
+cleanup_mutex(void *mutex) {
+	pthread_mutex_unlock(mutex);
+}
+
 void *
 kdump_thread_function_cyclic(void *arg) {
 	void *retval = PTHREAD_FAIL;
@@ -7731,11 +7874,13 @@ kdump_thread_function_cyclic(void *arg) {
 		buf_ready = FALSE;
 
 		pthread_mutex_lock(&info->page_data_mutex);
+		pthread_cleanup_push(cleanup_mutex, &info->page_data_mutex);
 		while (page_data_buf[index].used != FALSE) {
+			pthread_testcancel();
 			index = (index + 1) % info->num_buffers;
 		}
 		page_data_buf[index].used = TRUE;
-		pthread_mutex_unlock(&info->page_data_mutex);
+		pthread_cleanup_pop(1);
 
 		while (buf_ready == FALSE) {
 			pthread_testcancel();
