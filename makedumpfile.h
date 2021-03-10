@@ -495,7 +495,7 @@ do { \
 #define KVER_MIN_SHIFT 16
 #define KERNEL_VERSION(x,y,z) (((x) << KVER_MAJ_SHIFT) | ((y) << KVER_MIN_SHIFT) | (z))
 #define OLDEST_VERSION		KERNEL_VERSION(2, 6, 15) /* linux-2.6.15 */
-#define LATEST_VERSION		KERNEL_VERSION(5, 4, 8) /* linux-5.4.8 */
+#define LATEST_VERSION		KERNEL_VERSION(5, 9, 4) /* linux-5.9.4 */
 
 /*
  * vmcoreinfo in /proc/vmcore
@@ -1262,7 +1262,7 @@ struct splitting_info {
 	mdf_pfn_t		end_pfn;
 	off_t			offset_eraseinfo;
 	unsigned long		size_eraseinfo;
-} splitting_info_t;
+};
 
 struct parallel_info {
 	int			fd_memory;
@@ -1275,7 +1275,7 @@ struct parallel_info {
 #ifdef USELZO
 	lzo_bytep		wrkmem;
 #endif
-} parallel_info_t;
+};
 
 struct ppc64_vmemmap {
 	unsigned long		phys;
@@ -1301,6 +1301,7 @@ struct DumpInfo {
 	int		flag_read_vmcoreinfo;    /* flag of reading vmcoreinfo file */
 	int		flag_show_usage;     /* flag of showing usage */
 	int		flag_show_version;   /* flag of showing version */
+	int		flag_check_params;   /* only check parameters */
 	int		flag_flatten;        /* flag of outputting flattened
 						format to a standard out */
 	int		flag_rearrange;      /* flag of creating dumpfile from
@@ -2006,8 +2007,8 @@ struct memory_range {
 };
 
 #define CRASH_RESERVED_MEM_NR   8
-struct memory_range crash_reserved_mem[CRASH_RESERVED_MEM_NR];
-int crash_reserved_mem_nr;
+extern struct memory_range crash_reserved_mem[CRASH_RESERVED_MEM_NR];
+extern int crash_reserved_mem_nr;
 
 unsigned long read_vmcoreinfo_symbol(char *str_symbol);
 int readmem(int type_addr, unsigned long long addr, void *bufptr, size_t size);
@@ -2362,6 +2363,7 @@ struct elf_prstatus {
 #define OPT_WORKING_DIR         OPT_START+15
 #define OPT_NUM_THREADS         OPT_START+16
 #define OPT_PARTIAL_DMESG       OPT_START+17
+#define OPT_CHECK_PARAMS        OPT_START+18
 
 /*
  * Function Prototype.

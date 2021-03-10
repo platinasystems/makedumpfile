@@ -3406,8 +3406,6 @@ section_mem_map_addr(unsigned long addr, unsigned long *map_mask)
 	map = ULONG(mem_section + OFFSET(mem_section.section_mem_map));
 	mask = SECTION_MAP_MASK;
 	*map_mask = map & ~mask;
-	if (map == 0x0)
-		*map_mask |= SECTION_MARKED_PRESENT;
 	map &= mask;
 	free(mem_section);
 
@@ -3453,10 +3451,8 @@ validate_mem_section(unsigned long *mem_sec,
 			mem_map = NOT_MEMMAP_ADDR;
 		} else {
 			mem_map = section_mem_map_addr(section, &map_mask);
+			/* for either no mem_map or hot-removed */
 			if (!(map_mask & SECTION_MARKED_PRESENT)) {
-				return FALSE;
-			}
-			if (mem_map == 0) {
 				mem_map = NOT_MEMMAP_ADDR;
 			} else {
 				mem_map = sparse_decode_mem_map(mem_map,
@@ -3476,7 +3472,6 @@ static int
 get_mem_section(unsigned int mem_section_size, unsigned long *mem_maps,
 		unsigned int num_section)
 {
-	unsigned long mem_section_ptr;
 	int ret = FALSE;
 	unsigned long *mem_sec = NULL;
 
@@ -3488,34 +3483,18 @@ get_mem_section(unsigned int mem_section_size, unsigned long *mem_maps,
 	ret = validate_mem_section(mem_sec, SYMBOL(mem_section),
 				   mem_section_size, mem_maps, num_section);
 
-	if (is_sparsemem_extreme()) {
-		int symbol_valid = ret;
-		int pointer_valid;
-		int mem_maps_size = sizeof(*mem_maps) * num_section;
-		unsigned long *mem_maps_ex = NULL;
+	if (!ret && is_sparsemem_extreme()) {
+		unsigned long mem_section_ptr;
+
 		if (!readmem(VADDR, SYMBOL(mem_section), &mem_section_ptr,
 			     sizeof(mem_section_ptr)))
 			goto out;
 
-		if ((mem_maps_ex = malloc(mem_maps_size)) == NULL) {
-			ERRMSG("Can't allocate memory for the mem_maps. %s\n",
-			    strerror(errno));
-			goto out;
-		}
+		ret = validate_mem_section(mem_sec, mem_section_ptr,
+				mem_section_size, mem_maps, num_section);
 
-		pointer_valid = validate_mem_section(mem_sec,
-						     mem_section_ptr,
-						     mem_section_size,
-						     mem_maps_ex,
-						     num_section);
-		if (pointer_valid)
-			memcpy(mem_maps, mem_maps_ex, mem_maps_size);
-		if (mem_maps_ex)
-			free(mem_maps_ex);
-		ret = symbol_valid ^ pointer_valid;
-		if (!ret) {
+		if (!ret)
 			ERRMSG("Could not validate mem_section.\n");
-		}
 	}
 out:
 	if (mem_sec != NULL)
@@ -8406,7 +8385,6 @@ write_kdump_pages_cyclic(struct cache_data *cd_header, struct cache_data *cd_pag
 	unsigned char buf[info->page_size], *buf_out = NULL;
 	unsigned long len_buf_out;
 	struct timespec ts_start;
-	const off_t failed = (off_t)-1;
 	int ret = FALSE;
 	z_stream z_stream, *stream = NULL;
 #ifdef USELZO
@@ -8442,16 +8420,6 @@ write_kdump_pages_cyclic(struct cache_data *cd_header, struct cache_data *cd_pag
 
 	per = info->num_dumpable / 10000;
 	per = per ? per : 1;
-
-	/*
-	 * Set a fileoffset of Physical Address 0x0.
-	 */
-	if (lseek(info->fd_memory, get_offset_pt_load_memory(), SEEK_SET)
-	    == failed) {
-		ERRMSG("Can't seek the dump memory(%s). %s\n",
-		       info->name_memory, strerror(errno));
-		goto out;
-	}
 
 	start_pfn = cycle->start_pfn;
 	end_pfn   = cycle->end_pfn;
@@ -10954,7 +10922,7 @@ check_param_for_reassembling_dumpfile(int argc, char *argv[])
 		return FALSE;
 
 	if ((info->splitting_info
-	    = malloc(sizeof(splitting_info_t) * info->num_dumpfile))
+	    = malloc(sizeof(struct splitting_info) * info->num_dumpfile))
 	    == NULL) {
 		MSG("Can't allocate memory for splitting_info.\n");
 		return FALSE;
@@ -10976,12 +10944,6 @@ check_param_for_creating_dumpfile(int argc, char *argv[])
 	if (info->flag_generate_vmcoreinfo || info->flag_rearrange)
 		return FALSE;
 
-	if ((message_level < MIN_MSG_LEVEL)
-	    || (MAX_MSG_LEVEL < message_level)) {
-		message_level = DEFAULT_MSG_LEVEL;
-		MSG("Message_level is invalid.\n");
-		return FALSE;
-	}
 	if ((info->flag_compress && info->flag_elf_dumpfile)
 	    || (info->flag_read_vmcoreinfo && info->name_vmlinux)
 	    || (info->flag_read_vmcoreinfo && info->name_xen_syms))
@@ -11010,6 +10972,11 @@ check_param_for_creating_dumpfile(int argc, char *argv[])
 
 	if (info->flag_partial_dmesg && !info->flag_dmesg)
 		return FALSE;
+
+	if (info->flag_excludevm && !info->working_dir) {
+		MSG("-%c requires --work-dir\n", OPT_EXCLUDE_UNUSED_VM);
+		return FALSE;
+	}
 
 	if ((argc == optind + 2) && !info->flag_flatten
 				 && !info->flag_split
@@ -11042,7 +11009,7 @@ check_param_for_creating_dumpfile(int argc, char *argv[])
 			return FALSE;
 		}
 		if ((info->splitting_info
-		    = malloc(sizeof(splitting_info_t) * info->num_dumpfile))
+		    = malloc(sizeof(struct splitting_info) * info->num_dumpfile))
 		    == NULL) {
 			MSG("Can't allocate memory for splitting_info.\n");
 			return FALSE;
@@ -11077,13 +11044,13 @@ check_param_for_creating_dumpfile(int argc, char *argv[])
 
 	if (info->num_threads) {
 		if ((info->parallel_info =
-		     malloc(sizeof(parallel_info_t) * info->num_threads))
+		     malloc(sizeof(struct parallel_info) * info->num_threads))
 		    == NULL) {
 			MSG("Can't allocate memory for parallel_info.\n");
 			return FALSE;
 		}
 
-		memset(info->parallel_info, 0, sizeof(parallel_info_t)
+		memset(info->parallel_info, 0, sizeof(struct parallel_info)
 							* info->num_threads);
 	}
 
@@ -11406,6 +11373,23 @@ int show_mem_usage(void)
 	return TRUE;
 }
 
+static int set_message_level(char *str_ml)
+{
+	int ml;
+
+	ml = atoi(str_ml);
+	if ((ml < MIN_MSG_LEVEL) || (MAX_MSG_LEVEL < ml)) {
+		message_level = DEFAULT_MSG_LEVEL;
+		MSG("Message_level(%d) is invalid.\n", ml);
+		return FALSE;
+	}
+
+	if (info->flag_check_params)
+		return TRUE;
+
+	message_level = ml;
+	return TRUE;
+}
 
 static struct option longopts[] = {
 	{"split", no_argument, NULL, OPT_SPLIT},
@@ -11427,6 +11411,7 @@ static struct option longopts[] = {
 	{"splitblock-size", required_argument, NULL, OPT_SPLITBLOCK_SIZE},
 	{"work-dir", required_argument, NULL, OPT_WORKING_DIR},
 	{"num-threads", required_argument, NULL, OPT_NUM_THREADS},
+	{"check-params", no_argument, NULL, OPT_CHECK_PARAMS},
 	{0, 0, 0, 0}
 };
 
@@ -11525,7 +11510,8 @@ main(int argc, char *argv[])
 			info->flag_compress = DUMP_DH_COMPRESSED_LZO;
 			break;
 		case OPT_MESSAGE_LEVEL:
-			message_level = atoi(optarg);
+			if (!set_message_level(optarg))
+				goto out;
 			break;
 		case OPT_DUMP_DMESG:
 			info->flag_dmesg = 1;
@@ -11588,6 +11574,10 @@ main(int argc, char *argv[])
 		case OPT_NUM_THREADS:
 			info->num_threads = MAX(atoi(optarg), 0);
 			break;
+		case OPT_CHECK_PARAMS:
+			info->flag_check_params = TRUE;
+			message_level = DEFAULT_MSG_LEVEL;
+			break;
 		case '?':
 			MSG("Commandline parameter is invalid.\n");
 			MSG("Try `makedumpfile --help' for more information.\n");
@@ -11597,11 +11587,9 @@ main(int argc, char *argv[])
 	if (flag_debug)
 		message_level |= ML_PRINT_DEBUG_MSG;
 
-	if (info->flag_excludevm && !info->working_dir) {
-		ERRMSG("Error: -%c requires --work-dir\n", OPT_EXCLUDE_UNUSED_VM);
-		ERRMSG("Try `makedumpfile --help' for more information\n");
-		return COMPLETED;
-	}
+	if (info->flag_check_params)
+		/* suppress debugging messages */
+		message_level = DEFAULT_MSG_LEVEL;
 
 	if (info->flag_show_usage) {
 		print_usage();
@@ -11632,6 +11620,9 @@ main(int argc, char *argv[])
 			MSG("Try `makedumpfile --help' for more information.\n");
 			goto out;
 		}
+		if (info->flag_check_params)
+			goto check_ok;
+
 		if (!open_files_for_generating_vmcoreinfo())
 			goto out;
 
@@ -11655,6 +11646,9 @@ main(int argc, char *argv[])
 			MSG("Try `makedumpfile --help' for more information.\n");
 			goto out;
 		}
+		if (info->flag_check_params)
+			goto check_ok;
+
 		if (!check_dump_file(info->name_dumpfile))
 			goto out;
 
@@ -11675,6 +11669,9 @@ main(int argc, char *argv[])
 			MSG("Try `makedumpfile --help' for more information.\n");
 			goto out;
 		}
+		if (info->flag_check_params)
+			goto check_ok;
+
 		if (!check_dump_file(info->name_dumpfile))
 			goto out;
 
@@ -11688,6 +11685,9 @@ main(int argc, char *argv[])
 			MSG("Try `makedumpfile --help' for more information.\n");
 			goto out;
 		}
+		if (info->flag_check_params)
+			goto check_ok;
+
 		if (!check_dump_file(info->name_dumpfile))
 			goto out;
 		if (!dump_dmesg())
@@ -11701,6 +11701,9 @@ main(int argc, char *argv[])
 			MSG("Try `makedumpfile --help' for more information.\n");
 			goto out;
 		}
+		if (info->flag_check_params)
+			goto check_ok;
+
 		if (!populate_kernel_version())
 			goto out;
 
@@ -11719,6 +11722,9 @@ main(int argc, char *argv[])
 			MSG("Try `makedumpfile --help' for more information.\n");
 			goto out;
 		}
+		if (info->flag_check_params)
+			goto check_ok;
+
 		if (info->flag_split) {
 			for (i = 0; i < info->num_dumpfile; i++) {
 				SPLITTING_FD_BITMAP(i) = -1;
@@ -11746,13 +11752,16 @@ main(int argc, char *argv[])
 			MSG("The dumpfile is saved to %s.\n", info->name_dumpfile);
 		}
 	}
+check_ok:
 	retcd = COMPLETED;
 out:
-	MSG("\n");
-	if (retcd != COMPLETED)
-		MSG("makedumpfile Failed.\n");
-	else if (!info->flag_mem_usage)
-		MSG("makedumpfile Completed.\n");
+	if (!info->flag_check_params) {
+		MSG("\n");
+		if (retcd != COMPLETED)
+			MSG("makedumpfile Failed.\n");
+		else if (!info->flag_mem_usage)
+			MSG("makedumpfile Completed.\n");
+	}
 
 	free_for_parallel();
 
