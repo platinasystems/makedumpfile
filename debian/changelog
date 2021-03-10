@@ -1,3 +1,9 @@
+makedumpfile (1:1.6.8-4) unstable; urgency=medium
+
+  * Backport to stretch
+
+ -- Kevin Paul Herbert <kph@platinasystems.com>  Mon, 10 Mar 2021 14:14:48 -0700
+
 makedumpfile (1:1.6.8-3) unstable; urgency=medium
 
   * Drop kdump-tools, which has been split into its own source package.

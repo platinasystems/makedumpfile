@@ -5,7 +5,7 @@ Maintainer: Debian Kdump <team+kdump@tracker.debian.org>
 Uploaders: dann frazier <dannf@debian.org>,
            Thadeu Lima de Souza Cascardo <cascardo@debian.org>
 Standards-Version: 4.5.1
-Build-Depends: debhelper-compat (= 12),
+Build-Depends: debhelper (>= 10),
                libbz2-dev,
                libdw-dev (>= 0.141-2ubuntu1),
                libelf-dev,
