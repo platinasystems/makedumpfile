@@ -4,3 +4,4 @@
 0004-PATCH-1-3-Use-vmcoreinfo-note-in-proc-kcore-for-mem-.patch
 0005-PATCH-2-3-arm64-Make-use-of-NUMBER-VA_BITS-in-vmcore.patch
 0006-PATCH-3-3-arm64-support-flipped-VA-and-52-bit-kernel.patch
+0007-Bump-latest-kernel-version-supported-to-5.10.33.patch

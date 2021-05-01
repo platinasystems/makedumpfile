@@ -1,0 +1,22 @@
+From: Kevin Paul Herbert <Kevin Paul Herbert kph@platinasystems.com>
+Date: Fri, 30 Apr 2021 21:26:43 -0700
+Subject: Bump latest kernel version supported to 5.10.33
+
+Signed-off-by: Kevin Paul Herbert <Kevin Paul Herbert kph@platinasystems.com>
+---
+ makedumpfile.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/makedumpfile.h b/makedumpfile.h
+index 0fe3645..2498a71 100644
+--- a/makedumpfile.h
++++ b/makedumpfile.h
+@@ -495,7 +495,7 @@ do { \
+ #define KVER_MIN_SHIFT 16
+ #define KERNEL_VERSION(x,y,z) (((x) << KVER_MAJ_SHIFT) | ((y) << KVER_MIN_SHIFT) | (z))
+ #define OLDEST_VERSION		KERNEL_VERSION(2, 6, 15) /* linux-2.6.15 */
+-#define LATEST_VERSION		KERNEL_VERSION(5, 9, 4) /* linux-5.9.4 */
++#define LATEST_VERSION		KERNEL_VERSION(5, 10, 33) /* linux-5.10.33 */
+ 
+ /*
+  * vmcoreinfo in /proc/vmcore
