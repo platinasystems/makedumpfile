@@ -1,3 +1,10 @@
+makedumpfile (1:1.6.8-5~plat10+1) unstable; urgency=medium
+
+  * Set version that will beat our ambiguous version from stretch.
+  * Bump latest kernel version supported to 5.10.33
+
+ -- Kevin Paul Herbert <kph@platinasystems.com>  Fri, 30 Apr 2021 20:50:28 -0600
+
 makedumpfile (1:1.6.8-4) unstable; urgency=medium
 
   [ Ioanna Alifieraki ]
